@@ -24,7 +24,10 @@ export function MessageInput({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center p-4 flex-shrink-0">
+    <form
+      onSubmit={handleSubmit}
+      className="flex items-center p-4 flex-shrink-0"
+    >
       <input
         type="text"
         value={message}
