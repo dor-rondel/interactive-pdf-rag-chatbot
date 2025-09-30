@@ -25,7 +25,7 @@ A key feature is the ability to scroll to the source of information in the PDF, 
 ```
 /app                    # Next.js 15 app router
   /actions              # Server Actions
-    /pdf.ts             # PDF upload action (includes chunking & embedding)
+    /upload.ts             # PDF upload action (includes chunking & embedding)
   /api                  # API routes
     /chat               # Chat endpoint
   /components           # React components
