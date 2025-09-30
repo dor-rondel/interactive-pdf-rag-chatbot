@@ -8,18 +8,7 @@ import {
   BaseEmbedding,
 } from 'llamaindex';
 import { SimpleVectorStore } from 'llamaindex/vector-store';
-
-interface EmbeddingResponse {
-  embedding: {
-    values: number[];
-  };
-}
-
-interface BatchEmbeddingResponse {
-  embeddings: Array<{
-    values: number[];
-  }>;
-}
+import { BatchEmbeddingResponse, EmbeddingResponse } from './types';
 
 class GeminiEmbedding extends BaseEmbedding {
   private apiKey: string;
@@ -60,7 +49,7 @@ class GeminiEmbedding extends BaseEmbedding {
     }
   }
 
-  // Override the property as expected by BaseEmbedding
+  // Override the property as expected by LlamaIndex's Batch BaseEmbedding interface
   getTextEmbeddings = async (texts: string[]): Promise<number[][]> => {
     try {
       const url = `${this.baseUrl}/models/${this.model}:batchEmbedContents?key=${this.apiKey}`;
