@@ -8,8 +8,10 @@ vi.mock('@/app/actions/upload', () => ({
 }));
 
 describe('PdfUpload', () => {
+  const onUploadSuccess = vi.fn();
+
   it('should render the component', () => {
-    render(<PdfUpload />);
+    render(<PdfUpload onUploadSuccess={onUploadSuccess} />);
 
     expect(
       screen.getByRole('heading', { name: /upload your pdf/i })
@@ -20,7 +22,7 @@ describe('PdfUpload', () => {
   });
 
   it('should only accept PDF files', () => {
-    render(<PdfUpload />);
+    render(<PdfUpload onUploadSuccess={onUploadSuccess} />);
     const fileInput = screen.getByLabelText(/select a pdf file/i);
     expect(fileInput).toHaveAttribute('accept', '.pdf');
   });
@@ -30,7 +32,7 @@ describe('PdfUpload', () => {
       () => new Promise(() => {}) // Prevent the action from resolving
     );
 
-    render(<PdfUpload />);
+    render(<PdfUpload onUploadSuccess={onUploadSuccess} />);
 
     const file = new File(['hello'], 'hello.pdf', { type: 'application/pdf' });
     const fileInput = screen.getByLabelText(/select a pdf file/i);
@@ -48,7 +50,7 @@ describe('PdfUpload', () => {
     const mockAction = vi.mocked(uploadPdfAction);
     mockAction.mockResolvedValue({ error: null });
 
-    render(<PdfUpload />);
+    render(<PdfUpload onUploadSuccess={onUploadSuccess} />);
 
     // Check if the button is disabled initially
     const button = screen.getByRole('button', { name: /upload/i });
