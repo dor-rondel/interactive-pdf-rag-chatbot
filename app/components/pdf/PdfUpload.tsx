@@ -37,7 +37,15 @@ export function PdfUpload() {
           Drag and drop your file or click to browse.
         </p>
       </div>
-      <form action={formAction} className="mt-6 w-full">
+      <form
+        action={(formData) => {
+          if (file) {
+            formData.append('file', file);
+            formAction(formData);
+          }
+        }}
+        className="mt-6 w-full"
+      >
         <div className="flex items-center justify-center w-full">
           <label
             htmlFor="file-upload"
@@ -45,7 +53,7 @@ export function PdfUpload() {
           >
             <input
               id="file-upload"
-              name="file-upload"
+              name="file"
               type="file"
               className="sr-only"
               accept=".pdf"
