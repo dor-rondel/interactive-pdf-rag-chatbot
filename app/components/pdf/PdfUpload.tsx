@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect } from 'react';
 import { useFormStatus } from 'react-dom';
 import { uploadPdfAction } from '@/app/actions/upload';
 import { useState } from 'react';
@@ -23,9 +23,19 @@ function SubmitButton({ file }: { file: File | null }) {
   );
 }
 
-export function PdfUpload() {
+export function PdfUpload({
+  onUploadSuccess,
+}: {
+  onUploadSuccess: () => void;
+}) {
   const [state, formAction] = useActionState(uploadPdfAction, initialState);
   const [file, setFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    if (state !== initialState && state.error === null) {
+      onUploadSuccess();
+    }
+  }, [state, onUploadSuccess]);
 
   return (
     <div className="flex flex-col items-center justify-center w-full max-w-lg p-8 mx-auto bg-white border-2 border-dashed rounded-lg border-neutral-100 dark:bg-neutral-900 dark:border-neutral-800">

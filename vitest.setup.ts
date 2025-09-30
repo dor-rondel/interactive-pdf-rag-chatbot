@@ -16,3 +16,6 @@ if (typeof Blob.prototype.arrayBuffer !== 'function') {
     });
   };
 }
+
+// Mock scrollIntoView for JSDOM environment
+HTMLElement.prototype.scrollIntoView = vi.fn();
