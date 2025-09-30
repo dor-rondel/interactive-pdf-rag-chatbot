@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PdfUpload } from './PdfUpload';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { uploadPdfAction } from '@/app/actions/upload';
 
 vi.mock('@/app/actions/upload', () => ({
@@ -27,7 +27,7 @@ describe('PdfUpload', () => {
 
   it('should show loading state when form is submitted', async () => {
     vi.mocked(uploadPdfAction).mockImplementation(
-      () => new Promise(() => { }) // Prevent the action from resolving
+      () => new Promise(() => {}) // Prevent the action from resolving
     );
 
     render(<PdfUpload />);
@@ -65,8 +65,11 @@ describe('PdfUpload', () => {
     fireEvent.click(button);
 
     // Wait a bit to allow form submission to be processed
-    await waitFor(() => {
-      expect(mockAction).toHaveBeenCalled();
-    }, { timeout: 1000 });
+    await waitFor(
+      () => {
+        expect(mockAction).toHaveBeenCalled();
+      },
+      { timeout: 1000 }
+    );
   });
 });
