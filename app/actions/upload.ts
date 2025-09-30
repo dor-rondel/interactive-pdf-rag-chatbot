@@ -1,15 +1,32 @@
-export async function uploadPdfAction() {
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+'use server';
 
-  const shouldError = Math.random() > 0.5;
+import { generateEmbeddings } from '@/app/lib/llamaindex';
 
-  if (shouldError) {
+export async function uploadPdfAction(
+  prevState: { error: string | null },
+  formData: FormData
+) {
+  const file = formData.get('file') as File;
+
+  if (!file || file.type !== 'application/pdf') {
     return {
-      error: 'Failed to upload PDF. Please try again.',
+      error: 'Invalid file type. Please upload a PDF.',
     };
   }
 
-  return {
-    error: null,
-  };
+  try {
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+    // Generate embeddings using Gemini - runs only on server despite being importable
+    await generateEmbeddings(fileBuffer);
+
+    return {
+      error: null,
+    };
+  } catch (error) {
+    console.error('Error processing PDF:', error);
+    return {
+      error: 'Failed to process PDF. Please try again.',
+    };
+  }
 }
