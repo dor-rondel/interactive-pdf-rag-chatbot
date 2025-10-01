@@ -3,21 +3,76 @@
 import { useState } from 'react';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
-import { dummyMessages } from './dummy-data';
 import { MessageProps } from './types';
 
+/**
+ * Main chat interface component that handles message display and user interaction.
+ * Manages message state, handles API calls, and provides the chat UI layout.
+ *
+ * @param setChatting - Callback function to control whether chat interface is active
+ */
 export function ChatInterface({
   setChatting,
 }: {
   setChatting: (isChatting: boolean) => void;
 }) {
-  const [messages, setMessages] = useState(dummyMessages as MessageProps[]);
+  const [messages, setMessages] = useState<MessageProps[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSendMessage = (text: string) => {
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      { id: String(prevMessages.length + 1), text, sender: 'user' },
-    ]);
+  /**
+   * Handles sending a message through the chat API and updating the UI
+   * @param text - The user's message text
+   */
+  const handleSendMessage = async (text: string) => {
+    // Add user message immediately
+    const userMessage: MessageProps = {
+      id: String(Date.now()),
+      text,
+      sender: 'user',
+    };
+
+    setMessages((prevMessages) => [...prevMessages, userMessage]);
+    setIsLoading(true);
+
+    try {
+      // Call the chat API
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Add bot response
+      const botMessage: MessageProps = {
+        id: String(Date.now() + 1),
+        text: data.message,
+        sender: 'bot',
+        sources: data.sources,
+      };
+
+      setMessages((prevMessages) => [...prevMessages, botMessage]);
+    } catch (error) {
+      console.error('Error sending message:', error);
+
+      // Add error message
+      const errorMessage: MessageProps = {
+        id: String(Date.now() + 1),
+        text: 'Sorry, I encountered an error while processing your message. Please try again.',
+        sender: 'bot',
+      };
+
+      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -30,7 +85,7 @@ export function ChatInterface({
           &lt; Back to Upload
         </button>
         <MessageList messages={messages} />
-        <MessageInput onSendMessage={handleSendMessage} />
+        <MessageInput onSendMessage={handleSendMessage} isLoading={isLoading} />
       </div>
       <div className="w-full md:w-1/2 bg-gray-200 min-h-64 md:flex-1">
         {/* PDF Viewer will go here */}

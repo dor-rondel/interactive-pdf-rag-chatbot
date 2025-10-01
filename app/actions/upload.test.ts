@@ -12,14 +12,16 @@ describe('actions/upload', () => {
   const createMockFile = (
     name: string,
     type: string,
-    content: string = 'test content',
+    content: string = 'test content'
   ): File => {
     const file = new File([content], name, { type });
     return file;
   };
 
   beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('console', {
+      error: vi.fn(),
+    });
   });
 
   describe('uploadPdfAction', () => {
@@ -37,7 +39,7 @@ describe('actions/upload', () => {
 
       // Assert
       expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
-        expect.any(Buffer),
+        expect.any(Buffer)
       );
       expect(result).toStrictEqual({ error: null });
     });
@@ -104,14 +106,16 @@ describe('actions/upload', () => {
       const result = await uploadPdfAction(prevState, formData);
 
       // Assert
-      expect(generateEmbeddings).toHaveBeenCalledWith(expect.any(Buffer));
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
+      expect(console.error).toHaveBeenCalledExactlyOnceWith(
+        'Error processing PDF:',
+        mockError
+      );
       expect(result).toStrictEqual({
         error: 'Failed to process PDF: Embedding generation failed',
       });
-      expect(console.error).toHaveBeenCalledWith(
-        'Error processing PDF:',
-        mockError,
-      );
     });
 
     it('should handle unknown errors', async () => {
@@ -135,7 +139,11 @@ describe('actions/upload', () => {
     it('should convert file to buffer correctly', async () => {
       // Arrange
       const fileContent = 'test PDF content';
-      const mockFile = createMockFile('test.pdf', 'application/pdf', fileContent);
+      const mockFile = createMockFile(
+        'test.pdf',
+        'application/pdf',
+        fileContent
+      );
       const formData = new FormData();
       formData.append('file', mockFile);
       const prevState = { error: null };
@@ -157,7 +165,7 @@ describe('actions/upload', () => {
       const mockFile = createMockFile(
         'large.pdf',
         'application/pdf',
-        largeContent,
+        largeContent
       );
       const formData = new FormData();
       formData.append('file', mockFile);
@@ -169,7 +177,9 @@ describe('actions/upload', () => {
       const result = await uploadPdfAction(prevState, formData);
 
       // Assert
-      expect(generateEmbeddings).toHaveBeenCalledWith(expect.any(Buffer));
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
       expect(result).toStrictEqual({ error: null });
     });
 
@@ -203,7 +213,9 @@ describe('actions/upload', () => {
       const result = await uploadPdfAction(prevState, formData);
 
       // Assert
-      expect(generateEmbeddings).toHaveBeenCalledWith(expect.any(Buffer));
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
       expect(result).toStrictEqual({ error: null });
     });
   });

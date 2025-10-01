@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   description: 'A RAG chatbot for large PDF files.',
 };
 
+/**
+ * Root layout component for the application.
+ * Provides the basic HTML structure and global styles.
+ *
+ * @param children - React components to render within the layout
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
