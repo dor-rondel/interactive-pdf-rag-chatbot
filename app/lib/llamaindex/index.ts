@@ -97,27 +97,45 @@ Settings.chunkOverlap = 20;
 let store: SimpleVectorStore | null = null;
 
 export async function generateEmbeddings(file: Buffer) {
-  // Convert Buffer to text for PDF processing
-  const text = file.toString('utf-8');
-  const doc = new Document({ text, id_: 'pdf-document' });
-
-  // Create index with the document - this automatically creates embeddings
-  const index = await VectorStoreIndex.fromDocuments([doc]);
-
-  // Get the vector store from the index and persist it
-  const vectorStore = Object.values(index.vectorStores)[0] as SimpleVectorStore;
-
-  // Persist the vector store
   try {
-    await vectorStore.persist('./data/vector_store.json');
-    console.log('Vector store persisted to ./data/vector_store.json');
-    // Update our store reference for future use
-    store = vectorStore;
-  } catch (error) {
-    console.error('Failed to persist vector store:', error);
-  }
+    // Use require for pdf-parse in Node.js runtime
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require('pdf-parse');
+    
+    // Ensure we're passing a proper Buffer
+    const buffer = Buffer.isBuffer(file) ? file : Buffer.from(file);
+    
+    // Parse the PDF buffer
+    const pdfData = await pdfParse(buffer);
+    const text = pdfData.text;
+    
+    if (!text || text.trim().length === 0) {
+      throw new Error('No text content found in PDF. The PDF might be image-based, corrupted, or protected.');
+    }
+    
+    const doc = new Document({ text, id_: 'pdf-document' });
 
-  return index;
+    // Create index with the document - this automatically creates embeddings
+    const index = await VectorStoreIndex.fromDocuments([doc]);
+
+    // Get the vector store from the index and persist it
+    const vectorStore = Object.values(index.vectorStores)[0] as SimpleVectorStore;
+
+    // Persist the vector store
+    try {
+      await vectorStore.persist('./data/vector_store.json');
+      console.log('✅ PDF processed and embeddings saved successfully');
+      // Update our store reference for future use
+      store = vectorStore;
+    } catch (error) {
+      console.error('❌ Failed to persist vector store:', error);
+    }
+
+    return index;
+  } catch (error) {
+    console.error('❌ PDF parsing failed:', error);
+    throw new Error(`Failed to parse PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export async function getRetriever() {
@@ -127,7 +145,6 @@ export async function getRetriever() {
 
   try {
     retrievalStore = await SimpleVectorStore.fromPersistPath(persistPath);
-    console.log('Loaded persistent vector store for retrieval');
   } catch {
     throw new Error('Vector store not found. Please upload a PDF first.');
   }

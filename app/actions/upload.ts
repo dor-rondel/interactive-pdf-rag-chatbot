@@ -15,9 +15,10 @@ export async function uploadPdfAction(
   }
 
   try {
+    // Convert File to Buffer
     const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-    // Generate embeddings using Gemini - runs only on server despite being importable
+    // Generate embeddings directly in server action
     await generateEmbeddings(fileBuffer);
 
     return {
@@ -26,7 +27,7 @@ export async function uploadPdfAction(
   } catch (error) {
     console.error('Error processing PDF:', error);
     return {
-      error: 'Failed to process PDF. Please try again.',
+      error: `Failed to process PDF: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
