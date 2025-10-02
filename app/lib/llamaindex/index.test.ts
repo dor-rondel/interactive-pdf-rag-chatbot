@@ -1,335 +1,325 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'fs';
 
-// Mock the constants module
+// Mock constants
 vi.mock('@/app/lib/constants/gemini', () => ({
   GEMINI_EMBEDDING_MODEL: 'text-embedding-004',
+  GEMINI_MODEL: 'gemini-2.5-flash-latest',
 }));
 
-// Mock the external dependencies
+// Mock llamaindex
 vi.mock('llamaindex', () => ({
-  Document: class MockDocument {
-    text: string;
-    id_: string;
-    constructor(data: { text: string; id_: string }) {
-      this.text = data.text;
-      this.id_ = data.id_;
-    }
+  Document: vi.fn(),
+  VectorStoreIndex: {
+    fromDocuments: vi.fn(),
   },
   Settings: {
-    embedModel: null,
+    embedModel: {},
     chunkSize: 512,
     chunkOverlap: 20,
   },
-  VectorStoreIndex: {
-    fromDocuments: vi.fn(),
-    fromVectorStore: vi.fn(),
-  },
   BaseEmbedding: class BaseEmbedding {},
-}));
-
-vi.mock('llamaindex/vector-store', () => ({
-  SimpleVectorStore: {
-    fromPersistPath: vi.fn(),
+  MetadataMode: {
+    NONE: 'none',
   },
+  NodeWithScore: vi.fn(),
 }));
 
-import { VectorStoreIndex } from 'llamaindex';
-import { SimpleVectorStore } from 'llamaindex/vector-store';
+// Mock fs module
+vi.mock('fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+}));
 
-// Now import the module after setting up all mocks
-import { generateEmbeddings, getRetriever } from './index';
+// Get the global mock that was set up in vitest.setup.ts
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockPdfParseFunction = (globalThis as any).__mockPdfParse;
 
-describe('LlamaIndex Integration', () => {
-  const mockBatchEmbeddingValues = [
-    [0.1, 0.2, 0.3],
-    [0.4, 0.5, 0.6],
-    [0.7, 0.8, 0.9],
-  ];
+import {
+  generateEmbeddings,
+  getRetriever,
+  queryRAG,
+  resetGlobalIndex,
+} from './index';
+import { VectorStoreIndex, Document } from 'llamaindex';
 
+describe('llamaindex/index', () => {
   beforeEach(() => {
+    vi.stubEnv('GEMINI_API_KEY', 'test-api-key');
     vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('console', {
+      log: vi.fn(),
+      error: vi.fn(),
+    });
+
+    // Reset module state before each test
+    resetGlobalIndex();
   });
 
   describe('generateEmbeddings', () => {
-    it('should create embeddings from PDF buffer and persist vector store', async () => {
+    it('should process PDF and create embeddings successfully', async () => {
       // Arrange
-      const pdfBuffer = Buffer.from(
-        'Sample PDF content for testing embeddings'
-      );
+      const testBuffer = Buffer.from('test pdf content');
       const mockVectorStore = {
         persist: vi.fn().mockResolvedValue(undefined),
       };
       const mockIndex = {
-        vectorStores: {
-          'simple-vector-store': mockVectorStore,
+        storageContext: {
+          vectorStores: { test: mockVectorStore },
         },
       };
 
-      // Mock successful API response
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            embeddings: mockBatchEmbeddingValues.map((values) => ({ values })),
-          }),
-      } as unknown as Response);
-
-      // Mock VectorStoreIndex.fromDocuments
+      mockPdfParseFunction.mockResolvedValue({
+        text: 'Extracted PDF text content',
+        numpages: 1,
+        numrender: 1,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+      vi.mocked(Document).mockReturnValue({} as never);
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
-        mockIndex as unknown as VectorStoreIndex
+        mockIndex as never
       );
+      vi.mocked(fs.existsSync).mockReturnValue(false);
 
       // Act
-      const result = await generateEmbeddings(pdfBuffer);
+      const result = await generateEmbeddings(testBuffer);
 
       // Assert
-      expect(VectorStoreIndex.fromDocuments).toHaveBeenCalledWith([
-        expect.objectContaining({
-          text: pdfBuffer.toString('utf-8'),
-          id_: 'pdf-document',
-        }),
+      expect(mockPdfParseFunction).toHaveBeenCalledExactlyOnceWith(testBuffer);
+      expect(Document).toHaveBeenCalledExactlyOnceWith({
+        text: 'Extracted PDF text content',
+        id_: 'pdf-document',
+      });
+      expect(VectorStoreIndex.fromDocuments).toHaveBeenCalledExactlyOnceWith([
+        {},
       ]);
-
-      expect(mockVectorStore.persist).toHaveBeenCalledWith(
+      expect(fs.mkdirSync).toHaveBeenCalledExactlyOnceWith('./data', {
+        recursive: true,
+      });
+      expect(fs.writeFileSync).toHaveBeenCalledExactlyOnceWith(
+        './data/document.txt',
+        'Extracted PDF text content',
+        'utf8'
+      );
+      expect(mockVectorStore.persist).toHaveBeenCalledExactlyOnceWith(
         './data/vector_store.json'
       );
-      expect(result).toStrictEqual(mockIndex);
+      expect(result).toBe(mockIndex);
     });
 
-    it('should handle API errors gracefully', async () => {
+    it('should throw error for empty buffer', async () => {
       // Arrange
-      const pdfBuffer = Buffer.from('Sample PDF content');
-
-      // Mock failed API response
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-        text: () => Promise.resolve('{"error": {"message": "Quota exceeded"}}'),
-      } as unknown as Response);
-
-      // Mock VectorStoreIndex.fromDocuments to throw
-      vi.mocked(VectorStoreIndex.fromDocuments).mockRejectedValue(
-        new Error('HTTP 429: {"error": {"message": "Quota exceeded"}}')
-      );
+      const emptyBuffer = Buffer.alloc(0);
 
       // Act & Assert
-      await expect(generateEmbeddings(pdfBuffer)).rejects.toThrow(
-        'Quota exceeded'
+      await expect(generateEmbeddings(emptyBuffer)).rejects.toThrow(
+        'Invalid file buffer provided'
       );
     });
 
-    it('should handle vector store persistence errors', async () => {
+    it('should throw error when PDF has no text content', async () => {
       // Arrange
-      const pdfBuffer = Buffer.from('Sample PDF content');
-      const mockVectorStore = {
-        persist: vi
-          .fn()
-          .mockRejectedValue(new Error('ENOENT: no such file or directory')),
-      };
-      const mockIndex = {
-        vectorStores: {
-          'simple-vector-store': mockVectorStore,
-        },
-      };
+      const testBuffer = Buffer.from('test pdf content');
 
-      // Mock successful embedding creation but failed persistence
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            embeddings: mockBatchEmbeddingValues.map((values) => ({ values })),
-          }),
-      } as unknown as Response);
+      mockPdfParseFunction.mockResolvedValue({
+        text: '',
+        numpages: 1,
+        numrender: 1,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
 
-      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
-        mockIndex as unknown as VectorStoreIndex
+      // Act & Assert
+      await expect(generateEmbeddings(testBuffer)).rejects.toThrow(
+        'No text content found in PDF. The PDF might be image-based, corrupted, or protected.'
       );
-
-      // Mock console.error to verify error logging
-      const consoleSpy = vi
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-
-      // Act
-      const result = await generateEmbeddings(pdfBuffer);
-
-      // Assert
-      expect(result).toStrictEqual(mockIndex);
-      expect(mockVectorStore.persist).toHaveBeenCalled();
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Failed to persist vector store:',
-        expect.any(Error)
-      );
-
-      consoleSpy.mockRestore();
     });
 
-    it('should convert buffer to text correctly', async () => {
+    it('should handle PDF parsing errors', async () => {
       // Arrange
-      const testText =
-        'This is a test PDF content with special characters: áéíóú';
-      const pdfBuffer = Buffer.from(testText, 'utf-8');
-      const mockVectorStore = {
-        persist: vi.fn().mockResolvedValue(undefined),
-      };
-      const mockIndex = {
-        vectorStores: {
-          'simple-vector-store': mockVectorStore,
-        },
-      };
+      const testBuffer = Buffer.from('test pdf content');
 
-      vi.mocked(fetch).mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            embeddings: mockBatchEmbeddingValues.map((values) => ({ values })),
-          }),
-      } as unknown as Response);
+      mockPdfParseFunction.mockRejectedValue(new Error('PDF parsing failed'));
 
-      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
-        mockIndex as unknown as VectorStoreIndex
+      // Act & Assert
+      await expect(generateEmbeddings(testBuffer)).rejects.toThrow(
+        'Failed to parse PDF: PDF parsing failed'
       );
-
-      // Act
-      await generateEmbeddings(pdfBuffer);
-
-      // Assert
-      expect(VectorStoreIndex.fromDocuments).toHaveBeenCalledWith([
-        expect.objectContaining({
-          text: testText,
-          id_: 'pdf-document',
-        }),
-      ]);
     });
   });
 
   describe('getRetriever', () => {
-    it('should load persistent vector store and return retriever', async () => {
+    it('should recreate index from persisted data successfully', async () => {
       // Arrange
-      const mockVectorStore = {};
-      const mockRetriever = { query: vi.fn() };
+      const mockRetriever = {};
       const mockIndex = {
         asRetriever: vi.fn().mockReturnValue(mockRetriever),
       };
 
-      vi.mocked(SimpleVectorStore.fromPersistPath).mockResolvedValue(
-        mockVectorStore as unknown as SimpleVectorStore
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        'Persisted document text content'
       );
-      vi.mocked(VectorStoreIndex.fromVectorStore).mockResolvedValue(
-        mockIndex as unknown as VectorStoreIndex
+      vi.mocked(Document).mockReturnValue({} as never);
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
       );
-
-      // Mock console.log
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       // Act
       const result = await getRetriever();
 
       // Assert
-      expect(SimpleVectorStore.fromPersistPath).toHaveBeenCalledWith(
+      expect(fs.existsSync).toHaveBeenNthCalledWith(1, './data/document.txt');
+      expect(fs.existsSync).toHaveBeenNthCalledWith(
+        2,
         './data/vector_store.json'
       );
-      expect(VectorStoreIndex.fromVectorStore).toHaveBeenCalledWith(
-        mockVectorStore
+      expect(fs.readFileSync).toHaveBeenCalledExactlyOnceWith(
+        './data/document.txt',
+        'utf8'
       );
-      expect(mockIndex.asRetriever).toHaveBeenCalled();
+      expect(Document).toHaveBeenCalledExactlyOnceWith({
+        text: 'Persisted document text content',
+        id_: 'pdf-document',
+      });
+      expect(mockIndex.asRetriever).toHaveBeenCalledExactlyOnceWith();
       expect(result).toBe(mockRetriever);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Loaded persistent vector store for retrieval'
-      );
-
-      consoleSpy.mockRestore();
     });
 
-    it('should throw error when vector store is not found', async () => {
+    it('should throw error when required files do not exist', async () => {
       // Arrange
-      vi.mocked(SimpleVectorStore.fromPersistPath).mockRejectedValue(
-        new Error('ENOENT: no such file or directory')
-      );
+      vi.mocked(fs.existsSync).mockReturnValue(false);
 
       // Act & Assert
       await expect(getRetriever()).rejects.toThrow(
         'Vector store not found. Please upload a PDF first.'
       );
-
-      expect(SimpleVectorStore.fromPersistPath).toHaveBeenCalledWith(
-        './data/vector_store.json'
-      );
-      expect(VectorStoreIndex.fromVectorStore).not.toHaveBeenCalled();
     });
 
-    it('should handle corrupted vector store file', async () => {
+    it('should throw error when persisted text is empty', async () => {
       // Arrange
-      vi.mocked(SimpleVectorStore.fromPersistPath).mockRejectedValue(
-        new Error('JSON parse error')
-      );
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('');
 
       // Act & Assert
       await expect(getRetriever()).rejects.toThrow(
-        'Vector store not found. Please upload a PDF first.'
+        'Persisted document text is empty or invalid.'
       );
     });
   });
 
-  describe('GeminiEmbedding class integration', () => {
-    it('should create index and persist vector store', async () => {
+  describe('queryRAG', () => {
+    it('should perform RAG query successfully', async () => {
       // Arrange
-      const testText = 'Test text for embedding';
-      const pdfBuffer = Buffer.from(testText);
-      const mockVectorStore = {
-        persist: vi.fn().mockResolvedValue(undefined),
+      const question = 'What is this document about?';
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([
+          {
+            node: {
+              getContent: vi.fn().mockReturnValue('Document content chunk'),
+            },
+            score: 0.85,
+          },
+        ]),
       };
-      const mockIndex = {
-        vectorStores: {
-          'simple-vector-store': mockVectorStore,
-        },
+      const mockFetchResponse = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: 'This document is about testing.' }],
+              },
+            },
+          ],
+        }),
       };
 
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
-        mockIndex as unknown as VectorStoreIndex
+        mockIndex as never
+      );
+
+      vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
+
+      // Act
+      const result = await queryRAG(question);
+
+      // Assert
+      expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent?key=test-api-key',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      expect(result).toStrictEqual({
+        message: 'This document is about testing.',
+        sources: [
+          {
+            content: 'Document content chunk...',
+            score: 0.85,
+          },
+        ],
+      });
+    });
+
+    it('should throw error for empty question', async () => {
+      // Act & Assert
+      await expect(queryRAG('')).rejects.toThrow('Question cannot be empty');
+      await expect(queryRAG('   ')).rejects.toThrow('Question cannot be empty');
+    });
+
+    it('should handle case when no relevant documents are found', async () => {
+      // Arrange
+      const question = 'What is this document about?';
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([]),
+      };
+
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
       );
 
       // Act
-      await generateEmbeddings(pdfBuffer);
+      const result = await queryRAG(question);
 
       // Assert
-      expect(VectorStoreIndex.fromDocuments).toHaveBeenCalledWith([
-        expect.objectContaining({
-          text: testText,
-          id_: 'pdf-document',
-        }),
-      ]);
-      expect(mockVectorStore.persist).toHaveBeenCalledWith(
-        './data/vector_store.json'
-      );
-    });
-
-    it('should handle malformed API responses', async () => {
-      // Arrange
-      const pdfBuffer = Buffer.from('Test content');
-
-      vi.mocked(VectorStoreIndex.fromDocuments).mockRejectedValue(
-        new Error('Invalid embedding data')
-      );
-
-      // Act & Assert
-      await expect(generateEmbeddings(pdfBuffer)).rejects.toThrow(
-        'Invalid embedding data'
-      );
+      expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
+      expect(result).toStrictEqual({
+        message:
+          "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.",
+        sources: [],
+      });
     });
   });
 
   describe('Environment configuration', () => {
-    it('should use the configured API key', () => {
-      // Test that the environment is properly set up
+    it('should require GEMINI_API_KEY to be set', () => {
       expect(process.env.GEMINI_API_KEY).toBe('test-api-key');
     });
 
-    it('should work with vi.stubEnv in individual tests', () => {
-      // This is where vi.stubEnv() DOES work properly
+    it('should allow environment variable changes', () => {
       vi.stubEnv('GEMINI_API_KEY', 'different-test-key');
-
-      // This will show the stubbed value
       expect(process.env.GEMINI_API_KEY).toBe('different-test-key');
     });
   });

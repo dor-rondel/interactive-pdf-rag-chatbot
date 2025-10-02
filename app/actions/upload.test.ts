@@ -1,58 +1,222 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { uploadPdfAction } from './upload';
-import { generateEmbeddings } from '@/app/lib/llamaindex';
 
+// Mock the generateEmbeddings function
 vi.mock('@/app/lib/llamaindex', () => ({
   generateEmbeddings: vi.fn(),
 }));
 
-describe('uploadPdfAction', () => {
-  const initialState = { error: null };
+import { generateEmbeddings } from '@/app/lib/llamaindex';
+
+describe('actions/upload', () => {
+  const createMockFile = (
+    name: string,
+    type: string,
+    content: string = 'test content'
+  ): File => {
+    const file = new File([content], name, { type });
+    return file;
+  };
 
   beforeEach(() => {
-    vi.stubEnv('GEMINI_API_KEY', 'test-api-key');
+    vi.stubGlobal('console', {
+      error: vi.fn(),
+    });
   });
 
-  it('should return an error if no file is provided', async () => {
-    const formData = new FormData();
-    const result = await uploadPdfAction(initialState, formData);
-    expect(result.error).toBe('Invalid file type. Please upload a PDF.');
-  });
+  describe('uploadPdfAction', () => {
+    it('should process valid PDF file successfully', async () => {
+      // Arrange
+      const mockFile = createMockFile('test.pdf', 'application/pdf');
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
 
-  it('should return an error if the file is not a PDF', async () => {
-    const formData = new FormData();
-    const blob = new Blob(['content'], { type: 'text/plain' });
-    formData.append('file', blob, 'test.txt');
-    const result = await uploadPdfAction(initialState, formData);
-    expect(result.error).toBe('Invalid file type. Please upload a PDF.');
-  });
+      vi.mocked(generateEmbeddings).mockResolvedValue({} as never);
 
-  it('should return success if the file is a PDF and processing succeeds', async () => {
-    vi.mocked(generateEmbeddings).mockResolvedValueOnce(
-      {} as Awaited<ReturnType<typeof generateEmbeddings>>
-    );
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
 
-    const formData = new FormData();
-    const blob = new Blob(['content'], { type: 'application/pdf' });
-    formData.append('file', blob, 'test.pdf');
-    const result = await uploadPdfAction(initialState, formData);
+      // Assert
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
+      expect(result).toStrictEqual({ error: null });
+    });
 
-    expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
-      expect.any(Buffer)
-    );
-    expect(result.error).toBeNull();
-  });
+    it('should reject non-PDF files', async () => {
+      // Arrange
+      const mockFile = createMockFile('test.txt', 'text/plain');
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
 
-  it('should return an error if processing fails', async () => {
-    vi.mocked(generateEmbeddings).mockRejectedValueOnce(
-      new Error('Processing failed')
-    );
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
 
-    const formData = new FormData();
-    const blob = new Blob(['content'], { type: 'application/pdf' });
-    formData.append('file', blob, 'test.pdf');
-    const result = await uploadPdfAction(initialState, formData);
+      // Assert
+      expect(generateEmbeddings).not.toHaveBeenCalled();
+      expect(result).toStrictEqual({
+        error: 'Invalid file type. Please upload a PDF.',
+      });
+    });
 
-    expect(result.error).toBe('Failed to process PDF. Please try again.');
+    it('should handle missing file', async () => {
+      // Arrange
+      const formData = new FormData();
+      const prevState = { error: null };
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(generateEmbeddings).not.toHaveBeenCalled();
+      expect(result).toStrictEqual({
+        error: 'Invalid file type. Please upload a PDF.',
+      });
+    });
+
+    it('should handle null file', async () => {
+      // Arrange
+      const formData = new FormData();
+      formData.append('file', 'null');
+      const prevState = { error: null };
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(generateEmbeddings).not.toHaveBeenCalled();
+      expect(result).toStrictEqual({
+        error: 'Invalid file type. Please upload a PDF.',
+      });
+    });
+
+    it('should handle generateEmbeddings errors', async () => {
+      // Arrange
+      const mockFile = createMockFile('test.pdf', 'application/pdf');
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
+      const mockError = new Error('Embedding generation failed');
+
+      vi.mocked(generateEmbeddings).mockRejectedValue(mockError);
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
+      expect(console.error).toHaveBeenCalledExactlyOnceWith(
+        'Error processing PDF:',
+        mockError
+      );
+      expect(result).toStrictEqual({
+        error: 'Failed to process PDF: Embedding generation failed',
+      });
+    });
+
+    it('should handle unknown errors', async () => {
+      // Arrange
+      const mockFile = createMockFile('test.pdf', 'application/pdf');
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
+
+      vi.mocked(generateEmbeddings).mockRejectedValue('string error');
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(result).toStrictEqual({
+        error: 'Failed to process PDF: Unknown error',
+      });
+    });
+
+    it('should convert file to buffer correctly', async () => {
+      // Arrange
+      const fileContent = 'test PDF content';
+      const mockFile = createMockFile(
+        'test.pdf',
+        'application/pdf',
+        fileContent
+      );
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
+
+      vi.mocked(generateEmbeddings).mockResolvedValue({} as never);
+
+      // Act
+      await uploadPdfAction(prevState, formData);
+
+      // Assert
+      const buffer = vi.mocked(generateEmbeddings).mock.calls[0][0];
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      expect(buffer.toString()).toBe(fileContent);
+    });
+
+    it('should handle large PDF files', async () => {
+      // Arrange
+      const largeContent = 'a'.repeat(10000);
+      const mockFile = createMockFile(
+        'large.pdf',
+        'application/pdf',
+        largeContent
+      );
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
+
+      vi.mocked(generateEmbeddings).mockResolvedValue({} as never);
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
+      expect(result).toStrictEqual({ error: null });
+    });
+
+    it('should handle files with PDF-like names but wrong MIME type', async () => {
+      // Arrange
+      const mockFile = createMockFile('test.pdf', 'text/plain');
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(generateEmbeddings).not.toHaveBeenCalled();
+      expect(result).toStrictEqual({
+        error: 'Invalid file type. Please upload a PDF.',
+      });
+    });
+
+    it('should handle empty PDF files', async () => {
+      // Arrange
+      const mockFile = createMockFile('empty.pdf', 'application/pdf', '');
+      const formData = new FormData();
+      formData.append('file', mockFile);
+      const prevState = { error: null };
+
+      vi.mocked(generateEmbeddings).mockResolvedValue({} as never);
+
+      // Act
+      const result = await uploadPdfAction(prevState, formData);
+
+      // Assert
+      expect(generateEmbeddings).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Buffer)
+      );
+      expect(result).toStrictEqual({ error: null });
+    });
   });
 });

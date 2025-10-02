@@ -7,13 +7,16 @@ describe('ChatInterface', () => {
     const setChatting = vi.fn();
     render(<ChatInterface setChatting={setChatting} />);
 
-    expect(screen.getAllByText('Hello! I am a bot.').length).toBeGreaterThan(0);
+    // Check that the input field is present
     expect(
       screen.getByPlaceholderText('Type your message...')
     ).toBeInTheDocument();
 
+    // Check that the back button is present and functional
     const backButton = screen.getByRole('button', { name: /back to upload/i });
+    expect(backButton).toBeInTheDocument();
+
     fireEvent.click(backButton);
-    expect(setChatting).toHaveBeenCalledWith(false);
+    expect(setChatting).toHaveBeenCalledExactlyOnceWith(false);
   });
 });

@@ -6,6 +6,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      GEMINI_API_KEY: abc123-your-test-api-key-here
+
     steps:
       - uses: actions/checkout@v5
 

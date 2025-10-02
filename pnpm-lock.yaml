@@ -7,6 +7,9 @@ settings:
 importers:
   .:
     dependencies:
+      '@types/pdf-parse':
+        specifier: ^1.1.5
+        version: 1.1.5
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -16,6 +19,9 @@ importers:
       next:
         specifier: 15.5.3
         version: 15.5.3(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      pdf-parse:
+        specifier: ^1.1.1
+        version: 1.1.1
       react:
         specifier: 19.1.0
         version: 19.1.0
@@ -1569,6 +1575,12 @@ packages:
     resolution:
       {
         integrity: sha512-F1CBxgqwOMc4GKJ7eY22hWhBVQuMYTtqI8L0FcszYcpYX0fzfDGpez22Xau8Mgm7O9fI+zA/TYIdq3tGWfweBA==,
+      }
+
+  '@types/pdf-parse@1.1.5':
+    resolution:
+      {
+        integrity: sha512-kBfrSXsloMnUJOKi25s3+hRmkycHfLK6A09eRGqF/N8BkQoPUmaCr+q8Cli5FnfohEz/rsv82zAiPz/LXtOGhA==,
       }
 
   '@types/react-dom@19.1.9':
@@ -3664,6 +3676,12 @@ packages:
       }
     engines: { node: ^18 || ^20 || >= 21 }
 
+  node-ensure@0.0.0:
+    resolution:
+      {
+        integrity: sha512-DRI60hzo2oKN1ma0ckc6nQWlHU69RH6xN0sjQTjMpChPfTYvKZdcQFfdYK2RWbJcKyUizSIy/l8OTGxMAM1QDw==,
+      }
+
   node-gyp-build@4.8.4:
     resolution:
       {
@@ -3818,6 +3836,13 @@ packages:
         integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==,
       }
     engines: { node: '>= 14.16' }
+
+  pdf-parse@1.1.1:
+    resolution:
+      {
+        integrity: sha512-v6ZJ/efsBpGrGGknjtq9J/oC8tZWq0KWL5vQrk2GlzLEQPUDB1ex+13Rmidl1neNN358Jn9EHZw5y07FFtaC7A==,
+      }
+    engines: { node: '>=6.8.1' }
 
   peberminta@0.9.0:
     resolution:
@@ -5525,6 +5550,10 @@ snapshots:
     dependencies:
       undici-types: 7.13.0
 
+  '@types/pdf-parse@1.1.5':
+    dependencies:
+      '@types/node': 20.19.17
+
   '@types/react-dom@19.1.9(@types/react@19.1.13)':
     dependencies:
       '@types/react': 19.1.13
@@ -6964,6 +6993,8 @@ snapshots:
 
   node-addon-api@8.5.0: {}
 
+  node-ensure@0.0.0: {}
+
   node-gyp-build@4.8.4: {}
 
   node-releases@2.0.21: {}
@@ -7057,6 +7088,13 @@ snapshots:
   pathe@2.0.3: {}
 
   pathval@2.0.1: {}
+
+  pdf-parse@1.1.1:
+    dependencies:
+      debug: 3.2.7
+      node-ensure: 0.0.0
+    transitivePeerDependencies:
+      - supports-color
 
   peberminta@0.9.0: {}
 

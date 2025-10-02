@@ -1,20 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MessageInput } from './MessageInput';
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('MessageInput', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
-
-  it('should allow typing and submitting a message', async () => {
+  it('should allow typing and submitting a message', () => {
     const onSendMessage = vi.fn();
-    render(<MessageInput onSendMessage={onSendMessage} />);
+    render(<MessageInput onSendMessage={onSendMessage} isLoading={false} />);
     const input = screen.getByPlaceholderText('Type your message...');
     const button = screen.getByRole('button', { name: 'Send' });
 
@@ -25,12 +16,16 @@ describe('MessageInput', () => {
 
     fireEvent.click(button);
 
-    expect(
-      screen.getByRole('button', { name: /sending/i })
-    ).toBeInTheDocument();
+    expect(onSendMessage).toHaveBeenCalledExactlyOnceWith('Hello');
+    expect(input).toHaveValue('');
+  });
 
-    vi.runAllTimers();
+  it('should show loading state', () => {
+    const onSendMessage = vi.fn();
+    render(<MessageInput onSendMessage={onSendMessage} isLoading={true} />);
 
-    expect(onSendMessage).toHaveBeenCalledWith('Hello');
+    const button = screen.getByRole('button', { name: /sending/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toBeDisabled();
   });
 });

@@ -9,6 +9,12 @@ const initialState = {
   error: null,
 };
 
+/**
+ * Submit button component that shows upload status and handles form submission.
+ * Disabled when no file is selected or upload is in progress.
+ *
+ * @param file - The selected file object, null if no file selected
+ */
 function SubmitButton({ file }: { file: File | null }) {
   const { pending } = useFormStatus();
 
@@ -23,6 +29,12 @@ function SubmitButton({ file }: { file: File | null }) {
   );
 }
 
+/**
+ * PDF upload component that provides drag-and-drop file selection and upload functionality.
+ * Manages file state, handles upload actions, and provides user feedback.
+ *
+ * @param onUploadSuccess - Callback function called when upload completes successfully
+ */
 export function PdfUpload({
   onUploadSuccess,
 }: {
