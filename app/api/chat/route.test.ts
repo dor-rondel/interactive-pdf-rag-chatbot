@@ -6,9 +6,14 @@ import { POST } from './route';
 vi.mock('@/app/lib/llamaindex', () => ({
   queryRAG: vi.fn(),
   queryRAGStream: vi.fn(),
+  queryRAGWithMemory: vi.fn(),
+  queryRAGStreamWithMemory: vi.fn(),
 }));
 
-import { queryRAG, queryRAGStream } from '@/app/lib/llamaindex';
+import {
+  queryRAGWithMemory,
+  queryRAGStreamWithMemory,
+} from '@/app/lib/llamaindex';
 
 describe('/api/chat', () => {
   describe('POST', () => {
@@ -19,7 +24,7 @@ describe('/api/chat', () => {
         sources: [{ content: 'Source content...', score: 0.85 }],
       };
 
-      vi.mocked(queryRAG).mockResolvedValue(mockResult);
+      vi.mocked(queryRAGWithMemory).mockResolvedValue(mockResult);
 
       const request = new NextRequest('http://localhost:3000/api/chat', {
         method: 'POST',
@@ -33,7 +38,9 @@ describe('/api/chat', () => {
       const response = await POST(request);
 
       // Assert
-      expect(queryRAG).toHaveBeenCalledExactlyOnceWith('What is this about?');
+      expect(queryRAGWithMemory).toHaveBeenCalledExactlyOnceWith(
+        'What is this about?'
+      );
       expect(response.status).toBe(200);
 
       const responseData = await response.json();
@@ -52,7 +59,7 @@ describe('/api/chat', () => {
 
       const mockSources = [{ content: 'Source content...', score: 0.85 }];
 
-      vi.mocked(queryRAGStream).mockResolvedValue({
+      vi.mocked(queryRAGStreamWithMemory).mockResolvedValue({
         stream: mockStream,
         sources: mockSources,
       });
@@ -70,7 +77,7 @@ describe('/api/chat', () => {
       const response = await POST(request);
 
       // Assert
-      expect(queryRAGStream).toHaveBeenCalledExactlyOnceWith(
+      expect(queryRAGStreamWithMemory).toHaveBeenCalledExactlyOnceWith(
         'What is this about?'
       );
       expect(response.status).toBe(200);
@@ -174,7 +181,7 @@ describe('/api/chat', () => {
 
     it('should return 404 error for vector store not found', async () => {
       // Arrange
-      vi.mocked(queryRAG).mockRejectedValue(
+      vi.mocked(queryRAGWithMemory).mockRejectedValue(
         new Error('Vector store not found')
       );
 
@@ -200,7 +207,7 @@ describe('/api/chat', () => {
 
     it('should return 500 error for GEMINI_API_KEY error', async () => {
       // Arrange
-      vi.mocked(queryRAG).mockRejectedValue(
+      vi.mocked(queryRAGWithMemory).mockRejectedValue(
         new Error('GEMINI_API_KEY environment variable is required')
       );
 
@@ -225,7 +232,9 @@ describe('/api/chat', () => {
 
     it('should return 500 error for generic errors', async () => {
       // Arrange
-      vi.mocked(queryRAG).mockRejectedValue(new Error('Unexpected error'));
+      vi.mocked(queryRAGWithMemory).mockRejectedValue(
+        new Error('Unexpected error')
+      );
 
       const request = new NextRequest('http://localhost:3000/api/chat', {
         method: 'POST',
@@ -248,7 +257,9 @@ describe('/api/chat', () => {
 
     it('should handle streaming errors gracefully', async () => {
       // Arrange
-      vi.mocked(queryRAGStream).mockRejectedValue(new Error('Streaming error'));
+      vi.mocked(queryRAGStreamWithMemory).mockRejectedValue(
+        new Error('Streaming error')
+      );
 
       const request = new NextRequest('http://localhost:3000/api/chat', {
         method: 'POST',

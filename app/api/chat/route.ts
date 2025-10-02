@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { queryRAG, queryRAGStream } from '@/app/lib/llamaindex';
+import {
+  queryRAGWithMemory,
+  queryRAGStreamWithMemory,
+} from '@/app/lib/llamaindex';
 import { ChatRequest, ChatResponse } from '@/app/lib/llamaindex/types';
 
 /**
@@ -33,8 +36,8 @@ export async function POST(request: NextRequest) {
     const wantsStream = acceptHeader?.includes('text/stream');
 
     if (wantsStream) {
-      // Perform streaming RAG query
-      const { stream, sources } = await queryRAGStream(body.message);
+      // Perform streaming RAG query with memory
+      const { stream, sources } = await queryRAGStreamWithMemory(body.message);
 
       // Create a combined stream that sends sources first, then the message
       const combinedStream = new ReadableStream({
@@ -106,8 +109,8 @@ export async function POST(request: NextRequest) {
         },
       });
     } else {
-      // Fallback to non-streaming response
-      const result = await queryRAG(body.message);
+      // Fallback to non-streaming response with memory
+      const result = await queryRAGWithMemory(body.message);
 
       const response: ChatResponse = {
         message: result.message,
