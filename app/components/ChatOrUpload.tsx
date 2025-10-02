@@ -11,18 +11,20 @@ import { ChatInterface } from './chat/ChatInterface';
  */
 export function ChatOrUpload() {
   const [isChatting, setIsChatting] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   /**
-   * Handles successful PDF upload by switching to chat mode
+   * Handles successful PDF upload by switching to chat mode and storing the file
    */
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = (file: File) => {
+    setUploadedFile(file);
     setIsChatting(true);
   };
 
   return (
     <div className="w-full h-full p-4">
       {isChatting ? (
-        <ChatInterface setChatting={setIsChatting} />
+        <ChatInterface setChatting={setIsChatting} pdfFile={uploadedFile} />
       ) : (
         <PdfUpload onUploadSuccess={handleUploadSuccess} />
       )}
