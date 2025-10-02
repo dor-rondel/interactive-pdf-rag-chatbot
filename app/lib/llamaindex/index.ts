@@ -299,6 +299,108 @@ async function callGeminiLLM(prompt: string): Promise<string> {
 }
 
 /**
+ * Call Gemini LLM with streaming response
+ * @param prompt - The prompt to send to Gemini
+ * @returns ReadableStream<Uint8Array> - The streaming response
+ * @throws Error if API call fails
+ */
+async function callGeminiLLMStream(
+  prompt: string
+): Promise<ReadableStream<Uint8Array>> {
+  if (!prompt.trim()) {
+    throw new Error('Prompt cannot be empty');
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY environment variable is required');
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('No response body received');
+    }
+
+    // Transform the SSE stream to extract just the text content
+    return new ReadableStream({
+      start(controller) {
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+
+        function processStream() {
+          reader
+            .read()
+            .then(({ done, value }) => {
+              if (done) {
+                controller.close();
+                return;
+              }
+
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n');
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const jsonStr = line.slice(6).trim();
+                    if (jsonStr === '[DONE]') {
+                      controller.close();
+                      return;
+                    }
+
+                    const data = JSON.parse(jsonStr);
+                    const text =
+                      data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (text) {
+                      controller.enqueue(new TextEncoder().encode(text));
+                    }
+                  } catch (parseError) {
+                    // Skip malformed JSON lines
+                    console.warn('Failed to parse SSE data:', parseError);
+                  }
+                }
+              }
+
+              processStream();
+            })
+            .catch((error) => {
+              console.error('Stream reading error:', error);
+              controller.error(error);
+            });
+        }
+
+        processStream();
+      },
+    });
+  } catch (error) {
+    console.error('Error calling Gemini LLM stream:', error);
+    throw error;
+  }
+}
+
+/**
  * Perform RAG query against the loaded vector store
  * @param question - The user's question
  * @returns Promise<{message: string, sources: Array<{content: string, score: number}>}> - Response with sources
@@ -360,6 +462,78 @@ Please provide a comprehensive answer based on the context above. If the context
     };
   } catch (error) {
     console.error('Error in RAG query:', error);
+    throw error;
+  }
+}
+
+/**
+ * Perform streaming RAG query against the loaded vector store
+ * @param question - The user's question
+ * @returns Promise<{stream: ReadableStream<Uint8Array>, sources: Array<{content: string, score: number}>}> - Streaming response with sources
+ * @throws Error if retrieval or generation fails
+ */
+export async function queryRAGStream(question: string) {
+  if (!question.trim()) {
+    throw new Error('Question cannot be empty');
+  }
+
+  try {
+    // Get retriever for context
+    const retriever = await getRetriever();
+
+    // Retrieve relevant context
+    const retrievalResult = await retriever.retrieve(question);
+
+    if (!retrievalResult.length) {
+      // For no results, create a simple stream with the error message
+      const errorMessage =
+        "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.";
+
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(errorMessage));
+          controller.close();
+        },
+      });
+
+      return {
+        stream,
+        sources: [],
+      };
+    }
+
+    // Prepare context from retrieved documents
+    const context = retrievalResult
+      .map(
+        (result: NodeWithScore, index: number) =>
+          `[${index + 1}] ${result.node.getContent(MetadataMode.NONE)}`
+      )
+      .join('\n\n');
+
+    // Create a comprehensive prompt for the LLM
+    const prompt = `You are a helpful assistant that answers questions based on the provided context from uploaded documents.
+
+Context:
+${context}
+
+Question: ${question}
+
+Please provide a comprehensive answer based on the context above. If the context doesn't contain enough information to fully answer the question, please say so and explain what information is available.`;
+
+    // Get streaming response from Gemini
+    const stream = await callGeminiLLMStream(prompt);
+
+    // Return streaming response with sources
+    return {
+      stream,
+      sources: retrievalResult.map((result: NodeWithScore) => ({
+        content:
+          result.node.getContent(MetadataMode.NONE).substring(0, 200) + '...',
+        score: result.score || 0,
+      })),
+    };
+  } catch (error) {
+    console.error('Error in streaming RAG query:', error);
     throw error;
   }
 }
