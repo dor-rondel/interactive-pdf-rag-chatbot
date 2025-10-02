@@ -3,11 +3,11 @@ name: Assert New PR Is Valid Action
 on: pull_request
 
 jobs:
-  env:
-    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
   build:
     runs-on: ubuntu-latest
+
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - uses: actions/checkout@v5
