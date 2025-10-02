@@ -15,11 +15,7 @@ import {
   Memory,
 } from 'llamaindex';
 import { SimpleVectorStore } from 'llamaindex/vector-store';
-import {
-  BatchEmbeddingResponse,
-  EmbeddingResponse,
-  GeminiChatResponse,
-} from './types';
+import { BatchEmbeddingResponse, EmbeddingResponse } from './types';
 import * as fs from 'fs';
 
 /**
@@ -284,45 +280,6 @@ export async function getRetriever() {
  * @returns Promise<string> - The generated response
  * @throws Error if API call fails
  */
-async function callGeminiLLM(prompt: string): Promise<string> {
-  if (!prompt.trim()) {
-    throw new Error('Prompt cannot be empty');
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is required');
-  }
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data: GeminiChatResponse = await response.json();
-    return data.candidates[0]?.content?.parts[0]?.text || '';
-  } catch (error) {
-    console.error('Error calling Gemini LLM:', error);
-    throw error;
-  }
-}
 
 /**
  * Call Gemini LLM with streaming response
@@ -427,250 +384,14 @@ async function callGeminiLLMStream(
 }
 
 /**
- * Perform RAG query against the loaded vector store
- * @param question - The user's question
- * @returns Promise<{message: string, sources: Array<{content: string, score: number}>}> - Response with sources
- * @throws Error if retrieval or generation fails
- */
-export async function queryRAG(question: string) {
-  if (!question.trim()) {
-    throw new Error('Question cannot be empty');
-  }
-
-  try {
-    // Get retriever for context
-    const retriever = await getRetriever();
-
-    // Retrieve relevant context
-    const retrievalResult = await retriever.retrieve(question);
-
-    if (!retrievalResult.length) {
-      return {
-        message:
-          "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.",
-        sources: [],
-      };
-    }
-
-    // Prepare context from retrieved documents
-    const context = retrievalResult
-      .map(
-        (result: NodeWithScore, index: number) =>
-          `[${index + 1}] ${result.node.getContent(MetadataMode.NONE)}`
-      )
-      .join('\n\n');
-
-    // Create a comprehensive prompt for the LLM
-    const prompt = `You are a helpful assistant that answers questions based on the provided context from uploaded documents.
-
-Context:
-${context}
-
-Question: ${question}
-
-Please provide a comprehensive answer based on the context above. If the context doesn't contain enough information to fully answer the question, please say so and explain what information is available.`;
-
-    // Get response from Gemini
-    const response = await callGeminiLLM(prompt);
-
-    if (!response.trim()) {
-      throw new Error('Received empty response from LLM');
-    }
-
-    // Return response with sources
-    return {
-      message: response,
-      sources: retrievalResult.map((result: NodeWithScore) => ({
-        content:
-          result.node.getContent(MetadataMode.NONE).substring(0, 200) + '...',
-        score: result.score || 0,
-      })),
-    };
-  } catch (error) {
-    console.error('Error in RAG query:', error);
-    throw error;
-  }
-}
-
-/**
- * Perform RAG query with conversation memory
- * @param question - The user's question
- * @param memory - Optional Memory instance (uses global if not provided)
- * @returns Promise<{message: string, sources: Array<{content: string, score: number}>}> - Response with sources
- * @throws Error if retrieval or generation fails
- */
-export async function queryRAGWithMemory(
-  question: string,
-  memory?: Memory
-): Promise<{
-  message: string;
-  sources: Array<{ content: string; score: number }>;
-}> {
-  if (!question.trim()) {
-    throw new Error('Question cannot be empty');
-  }
-
-  try {
-    // Use provided memory or get global memory
-    const conversationMemory = memory || getMemory();
-
-    // Add user question to memory
-    await conversationMemory.add({ role: 'user', content: question });
-
-    // Get retriever for context
-    const retriever = await getRetriever();
-
-    // Retrieve relevant context
-    const retrievalResult = await retriever.retrieve(question);
-
-    if (!retrievalResult.length) {
-      const errorMessage =
-        "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.";
-
-      // Add error response to memory
-      await conversationMemory.add({
-        role: 'assistant',
-        content: errorMessage,
-      });
-
-      return {
-        message: errorMessage,
-        sources: [],
-      };
-    }
-
-    // Prepare context from retrieved documents
-    const context = retrievalResult
-      .map(
-        (result: NodeWithScore, index: number) =>
-          `[${index + 1}] ${result.node.getContent(MetadataMode.NONE)}`
-      )
-      .join('\n\n');
-
-    // Get conversation history (memory will handle token limits automatically)
-    const chatHistory = await conversationMemory.getLLM();
-
-    // Build conversation history string (exclude the current question we just added)
-    const historyText = chatHistory
-      .slice(0, -1) // Remove the current question
-      .map((msg) => `${msg.role}: ${msg.content}`)
-      .join('\n');
-
-    // Create a comprehensive prompt with both context and conversation history
-    const prompt = `You are a helpful assistant that answers questions based on the provided context from uploaded documents and previous conversation.
-
-${historyText ? `Previous conversation:\n${historyText}\n\n` : ''}Document context:
-${context}
-
-Current question: ${question}
-
-Please provide a comprehensive answer considering both the document context and our conversation history. If the context doesn't contain enough information to fully answer the question, please say so and explain what information is available.`;
-
-    // Get response from Gemini
-    const response = await callGeminiLLM(prompt);
-
-    if (!response.trim()) {
-      throw new Error('Received empty response from LLM');
-    }
-
-    // Add assistant response to memory
-    await conversationMemory.add({ role: 'assistant', content: response });
-
-    // Return response with sources
-    return {
-      message: response,
-      sources: retrievalResult.map((result: NodeWithScore) => ({
-        content:
-          result.node.getContent(MetadataMode.NONE).substring(0, 200) + '...',
-        score: result.score || 0,
-      })),
-    };
-  } catch (error) {
-    console.error('Error in RAG query with memory:', error);
-    throw error;
-  }
-}
-
-/**
- * Perform streaming RAG query against the loaded vector store
- * @param question - The user's question
- * @returns Promise<{stream: ReadableStream<Uint8Array>, sources: Array<{content: string, score: number}>}> - Streaming response with sources
- * @throws Error if retrieval or generation fails
- */
-export async function queryRAGStream(question: string) {
-  if (!question.trim()) {
-    throw new Error('Question cannot be empty');
-  }
-
-  try {
-    // Get retriever for context
-    const retriever = await getRetriever();
-
-    // Retrieve relevant context
-    const retrievalResult = await retriever.retrieve(question);
-
-    if (!retrievalResult.length) {
-      // For no results, create a simple stream with the error message
-      const errorMessage =
-        "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.";
-
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(errorMessage));
-          controller.close();
-        },
-      });
-
-      return {
-        stream,
-        sources: [],
-      };
-    }
-
-    // Prepare context from retrieved documents
-    const context = retrievalResult
-      .map(
-        (result: NodeWithScore, index: number) =>
-          `[${index + 1}] ${result.node.getContent(MetadataMode.NONE)}`
-      )
-      .join('\n\n');
-
-    // Create a comprehensive prompt for the LLM
-    const prompt = `You are a helpful assistant that answers questions based on the provided context from uploaded documents.
-
-Context:
-${context}
-
-Question: ${question}
-
-Please provide a comprehensive answer based on the context above. If the context doesn't contain enough information to fully answer the question, please say so and explain what information is available.`;
-
-    // Get streaming response from Gemini
-    const stream = await callGeminiLLMStream(prompt);
-
-    // Return streaming response with sources
-    return {
-      stream,
-      sources: retrievalResult.map((result: NodeWithScore) => ({
-        content:
-          result.node.getContent(MetadataMode.NONE).substring(0, 200) + '...',
-        score: result.score || 0,
-      })),
-    };
-  } catch (error) {
-    console.error('Error in streaming RAG query:', error);
-    throw error;
-  }
-}
-
-/**
  * Perform streaming RAG query with conversation memory
+ * Always returns streaming response with conversation context
  * @param question - The user's question
  * @param memory - Optional Memory instance (uses global if not provided)
  * @returns Promise<{stream: ReadableStream<Uint8Array>, sources: Array<{content: string, score: number}>}> - Streaming response with sources
  * @throws Error if retrieval or generation fails
  */
-export async function queryRAGStreamWithMemory(
+export async function queryRAG(
   question: string,
   memory?: Memory
 ): Promise<{
@@ -795,7 +516,7 @@ Please provide a comprehensive answer considering both the document context and 
       })),
     };
   } catch (error) {
-    console.error('Error in streaming RAG query with memory:', error);
+    console.error('Error in RAG query:', error);
     throw error;
   }
 }

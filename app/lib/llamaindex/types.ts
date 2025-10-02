@@ -81,20 +81,3 @@ export type StreamData =
   | StreamMessageStart
   | StreamMessageEnd
   | StreamError;
-
-// Gemini API response types
-
-/** Response format from Gemini chat completion API */
-export type GeminiChatResponse = {
-  /** Array of response candidates */
-  candidates: Array<{
-    /** Response content */
-    content: {
-      /** Array of content parts */
-      parts: Array<{
-        /** Generated text */
-        text: string;
-      }>;
-    };
-  }>;
-};
