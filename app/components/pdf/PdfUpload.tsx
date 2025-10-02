@@ -38,16 +38,16 @@ function SubmitButton({ file }: { file: File | null }) {
 export function PdfUpload({
   onUploadSuccess,
 }: {
-  onUploadSuccess: () => void;
+  onUploadSuccess: (file: File) => void;
 }) {
   const [state, formAction] = useActionState(uploadPdfAction, initialState);
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
-    if (state !== initialState && state.error === null) {
-      onUploadSuccess();
+    if (state !== initialState && state.error === null && file) {
+      onUploadSuccess(file);
     }
-  }, [state, onUploadSuccess]);
+  }, [state, onUploadSuccess, file]);
 
   return (
     <div className="flex flex-col items-center justify-center w-full max-w-lg p-8 mx-auto bg-white border-2 border-dashed rounded-lg border-neutral-100 dark:bg-neutral-900 dark:border-neutral-800">

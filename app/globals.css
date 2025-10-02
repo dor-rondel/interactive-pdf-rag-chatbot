@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+/* React PDF styles for annotations and text layers */
+@import 'react-pdf/dist/Page/AnnotationLayer.css';
+@import 'react-pdf/dist/Page/TextLayer.css';
+
 @theme {
   --color-primary-50: #f0f9ff;
   --color-primary-300: #93c5fd;

@@ -1,23 +1,44 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { MessageInput } from './MessageInput';
 import { MessageList } from './MessageList';
 import { MessageProps } from './types';
+
+// Dynamically import PdfViewer with no SSR to avoid server-side PDF.js issues
+const PdfViewer = dynamic(
+  () => import('../pdf/PdfViewer').then((mod) => ({ default: mod.PdfViewer })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-full bg-neutral-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-2"></div>
+          <p className="text-neutral-600">Loading PDF viewer...</p>
+        </div>
+      </div>
+    ),
+  }
+);
 
 /**
  * Main chat interface component that handles message display and user interaction.
  * Manages message state, handles API calls, and provides the chat UI layout.
  *
  * @param setChatting - Callback function to control whether chat interface is active
+ * @param pdfFile - The uploaded PDF file to display in the viewer
  */
 export function ChatInterface({
   setChatting,
+  pdfFile,
 }: {
   setChatting: (isChatting: boolean) => void;
+  pdfFile: File | null;
 }) {
   const [messages, setMessages] = useState<MessageProps[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   /**
    * Handles sending a message through the chat API and updating the UI
@@ -167,7 +188,12 @@ export function ChatInterface({
         <MessageInput onSendMessage={handleSendMessage} isLoading={isLoading} />
       </div>
       <div className="w-full md:w-1/2 bg-gray-200 min-h-64 md:flex-1">
-        {/* PDF Viewer will go here */}
+        <PdfViewer
+          file={pdfFile}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          className="h-full"
+        />
       </div>
     </div>
   );
