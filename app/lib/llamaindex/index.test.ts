@@ -41,6 +41,7 @@ import {
   generateEmbeddings,
   getRetriever,
   queryRAG,
+  queryRAGStream,
   resetGlobalIndex,
 } from './index';
 import { VectorStoreIndex, Document } from 'llamaindex';
@@ -310,6 +311,234 @@ describe('llamaindex/index', () => {
           "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.",
         sources: [],
       });
+    });
+  });
+
+  describe('queryRAGStream', () => {
+    it('should perform streaming RAG query successfully', async () => {
+      // Arrange
+      const question = 'What is this document about?';
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([
+          {
+            node: {
+              getContent: vi.fn().mockReturnValue('Document content chunk'),
+            },
+            score: 0.85,
+          },
+        ]),
+      };
+
+      // Mock SSE response
+      const mockStreamResponse = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"candidates":[{"content":{"parts":[{"text":"This"}]}}]}\n'
+            )
+          );
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"candidates":[{"content":{"parts":[{"text":" document"}]}}]}\n'
+            )
+          );
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"candidates":[{"content":{"parts":[{"text":" is about testing."}]}}]}\n'
+            )
+          );
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n'));
+          controller.close();
+        },
+      });
+
+      const mockFetchResponse = {
+        ok: true,
+        body: mockStreamResponse,
+      };
+
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+
+      vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
+
+      // Act
+      const result = await queryRAGStream(question);
+
+      // Assert
+      expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:streamGenerateContent?alt=sse&key=test-api-key',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      expect(result.sources).toStrictEqual([
+        {
+          content: 'Document content chunk...',
+          score: 0.85,
+        },
+      ]);
+      expect(result.stream).toBeInstanceOf(ReadableStream);
+
+      // Test reading from the stream
+      const reader = result.stream.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullText += decoder.decode(value, { stream: true });
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      expect(fullText).toBe('This document is about testing.');
+    });
+
+    it('should throw error for empty question', async () => {
+      // Act & Assert
+      await expect(queryRAGStream('')).rejects.toThrow(
+        'Question cannot be empty'
+      );
+      await expect(queryRAGStream('   ')).rejects.toThrow(
+        'Question cannot be empty'
+      );
+    });
+
+    it('should handle case when no relevant documents are found', async () => {
+      // Arrange
+      const question = 'What is this document about?';
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([]),
+      };
+
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+
+      // Act
+      const result = await queryRAGStream(question);
+
+      // Assert
+      expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
+      expect(result.sources).toStrictEqual([]);
+      expect(result.stream).toBeInstanceOf(ReadableStream);
+
+      // Test reading from the error stream
+      const reader = result.stream.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fullText += decoder.decode(value, { stream: true });
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      expect(fullText).toBe(
+        "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document."
+      );
+    });
+
+    it('should handle streaming API errors gracefully', async () => {
+      // Arrange
+      const question = 'What is this document about?';
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([
+          {
+            node: {
+              getContent: vi.fn().mockReturnValue('Document content chunk'),
+            },
+            score: 0.85,
+          },
+        ]),
+      };
+
+      const mockFetchResponse = {
+        ok: false,
+        status: 500,
+        text: vi.fn().mockResolvedValue('Internal Server Error'),
+      };
+
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+
+      vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
+
+      // Act & Assert
+      await expect(queryRAGStream(question)).rejects.toThrow(
+        'HTTP 500: Internal Server Error'
+      );
+    });
+
+    it('should handle missing response body', async () => {
+      // Arrange
+      const question = 'What is this document about?';
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([
+          {
+            node: {
+              getContent: vi.fn().mockReturnValue('Document content chunk'),
+            },
+            score: 0.85,
+          },
+        ]),
+      };
+
+      const mockFetchResponse = {
+        ok: true,
+        body: null,
+      };
+
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+
+      vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
+
+      // Act & Assert
+      await expect(queryRAGStream(question)).rejects.toThrow(
+        'No response body received'
+      );
     });
   });
 

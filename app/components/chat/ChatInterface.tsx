@@ -34,12 +34,24 @@ export function ChatInterface({
     setMessages((prevMessages) => [...prevMessages, userMessage]);
     setIsLoading(true);
 
+    // Create placeholder bot message for streaming
+    const botMessageId = String(Date.now() + 1);
+    const botMessage: MessageProps = {
+      id: botMessageId,
+      text: '',
+      sender: 'bot',
+      sources: [],
+    };
+
+    setMessages((prevMessages) => [...prevMessages, botMessage]);
+
     try {
-      // Call the chat API
+      // Call the chat API with streaming
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'text/stream',
         },
         body: JSON.stringify({ message: text }),
       });
@@ -48,28 +60,95 @@ export function ChatInterface({
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
+      if (!response.body) {
+        throw new Error('No response body received');
+      }
 
-      // Add bot response
-      const botMessage: MessageProps = {
-        id: String(Date.now() + 1),
-        text: data.message,
-        sender: 'bot',
-        sources: data.sources,
-      };
+      // Process streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = '';
+      let sources: Array<{ content: string; score: number }> = [];
 
-      setMessages((prevMessages) => [...prevMessages, botMessage]);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.trim()) {
+              try {
+                const data = JSON.parse(line);
+
+                switch (data.type) {
+                  case 'sources':
+                    sources = data.sources || [];
+                    break;
+
+                  case 'message_start':
+                    // Reset accumulated text for new message
+                    accumulatedText = '';
+                    break;
+
+                  case 'message_chunk':
+                    // Accumulate text and update UI
+                    accumulatedText += data.content || '';
+                    setMessages((prevMessages) =>
+                      prevMessages.map((msg) =>
+                        msg.id === botMessageId
+                          ? { ...msg, text: accumulatedText, sources }
+                          : msg
+                      )
+                    );
+                    break;
+
+                  case 'message_end':
+                    // Finalize the message
+                    setMessages((prevMessages) =>
+                      prevMessages.map((msg) =>
+                        msg.id === botMessageId
+                          ? { ...msg, text: accumulatedText, sources }
+                          : msg
+                      )
+                    );
+                    break;
+
+                  case 'error':
+                    throw new Error(data.error || 'Stream processing error');
+
+                  default:
+                    console.warn('Unknown stream data type:', data.type);
+                }
+              } catch (parseError) {
+                console.warn('Failed to parse stream line:', parseError);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
     } catch (error) {
       console.error('Error sending message:', error);
 
-      // Add error message
-      const errorMessage: MessageProps = {
-        id: String(Date.now() + 1),
-        text: 'Sorry, I encountered an error while processing your message. Please try again.',
-        sender: 'bot',
-      };
-
-      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+      // Replace the placeholder bot message with error message
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg.id === botMessageId
+            ? {
+                ...msg,
+                text: 'Sorry, I encountered an error while processing your message. Please try again.',
+                sources: [],
+              }
+            : msg
+        )
+      );
     } finally {
       setIsLoading(false);
     }
