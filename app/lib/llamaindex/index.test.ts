@@ -9,20 +9,25 @@ vi.mock('@/app/lib/constants/gemini', () => ({
 
 // Mock llamaindex
 vi.mock('llamaindex', () => ({
-  Document: vi.fn(),
   VectorStoreIndex: {
     fromDocuments: vi.fn(),
   },
+  Document: vi.fn(),
+  GeminiEmbedding: vi.fn(),
+  Gemini: vi.fn(),
+  createMemory: vi.fn(),
+  Memory: vi.fn(),
+  BaseEmbedding: vi.fn(),
   Settings: {
-    embedModel: {},
-    chunkSize: 512,
-    chunkOverlap: 20,
+    llm: undefined,
+    embedModel: undefined,
   },
-  BaseEmbedding: class BaseEmbedding {},
   MetadataMode: {
+    ALL: 'all',
+    EMBED: 'embed',
+    LLM: 'llm',
     NONE: 'none',
   },
-  NodeWithScore: vi.fn(),
 }));
 
 // Mock fs module
@@ -41,10 +46,10 @@ import {
   generateEmbeddings,
   getRetriever,
   queryRAG,
-  queryRAGStream,
   resetGlobalIndex,
+  resetGlobalMemory,
 } from './index';
-import { VectorStoreIndex, Document } from 'llamaindex';
+import { VectorStoreIndex, Document, createMemory } from 'llamaindex';
 
 describe('llamaindex/index', () => {
   beforeEach(() => {
@@ -57,6 +62,7 @@ describe('llamaindex/index', () => {
 
     // Reset module state before each test
     resetGlobalIndex();
+    resetGlobalMemory();
   });
 
   describe('generateEmbeddings', () => {
@@ -215,109 +221,16 @@ describe('llamaindex/index', () => {
   });
 
   describe('queryRAG', () => {
-    it('should perform RAG query successfully', async () => {
-      // Arrange
-      const question = 'What is this document about?';
-      const mockRetriever = {
-        retrieve: vi.fn().mockResolvedValue([
-          {
-            node: {
-              getContent: vi.fn().mockReturnValue('Document content chunk'),
-            },
-            score: 0.85,
-          },
-        ]),
-      };
-      const mockFetchResponse = {
-        ok: true,
-        json: vi.fn().mockResolvedValue({
-          candidates: [
-            {
-              content: {
-                parts: [{ text: 'This document is about testing.' }],
-              },
-            },
-          ],
-        }),
-      };
-
-      // Mock the fs calls to simulate files existing
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
-      vi.mocked(Document).mockReturnValue({} as never);
-      const mockIndex = {
-        asRetriever: vi.fn().mockReturnValue(mockRetriever),
-      };
-      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
-        mockIndex as never
-      );
-
-      vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
-
-      // Act
-      const result = await queryRAG(question);
-
-      // Assert
-      expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
-      expect(fetch).toHaveBeenCalledExactlyOnceWith(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent?key=test-api-key',
-        expect.objectContaining({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
-      expect(result).toStrictEqual({
-        message: 'This document is about testing.',
-        sources: [
-          {
-            content: 'Document content chunk...',
-            score: 0.85,
-          },
-        ],
-      });
-    });
-
-    it('should throw error for empty question', async () => {
-      // Act & Assert
-      await expect(queryRAG('')).rejects.toThrow('Question cannot be empty');
-      await expect(queryRAG('   ')).rejects.toThrow('Question cannot be empty');
-    });
-
-    it('should handle case when no relevant documents are found', async () => {
-      // Arrange
-      const question = 'What is this document about?';
-      const mockRetriever = {
-        retrieve: vi.fn().mockResolvedValue([]),
-      };
-
-      // Mock the fs calls to simulate files existing
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
-      vi.mocked(Document).mockReturnValue({} as never);
-      const mockIndex = {
-        asRetriever: vi.fn().mockReturnValue(mockRetriever),
-      };
-      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
-        mockIndex as never
-      );
-
-      // Act
-      const result = await queryRAG(question);
-
-      // Assert
-      expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
-      expect(result).toStrictEqual({
-        message:
-          "I couldn't find any relevant information in the uploaded document to answer your question. Please try rephrasing your question or upload a more relevant document.",
-        sources: [],
-      });
-    });
-  });
-
-  describe('queryRAGStream', () => {
     it('should perform streaming RAG query successfully', async () => {
       // Arrange
       const question = 'What is this document about?';
+      const mockMemory = {
+        add: vi.fn().mockResolvedValue(undefined),
+        getAll: vi.fn().mockResolvedValue([]),
+        getLLM: vi
+          .fn()
+          .mockResolvedValue([{ role: 'user', content: question }]),
+      };
       const mockRetriever = {
         retrieve: vi.fn().mockResolvedValue([
           {
@@ -367,13 +280,18 @@ describe('llamaindex/index', () => {
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
         mockIndex as never
       );
+      vi.mocked(createMemory).mockReturnValue(mockMemory as never);
 
       vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
 
       // Act
-      const result = await queryRAGStream(question);
+      const result = await queryRAG(question);
 
       // Assert
+      expect(mockMemory.add).toHaveBeenCalledWith({
+        role: 'user',
+        content: question,
+      });
       expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
       expect(fetch).toHaveBeenCalledExactlyOnceWith(
         'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:streamGenerateContent?alt=sse&key=test-api-key',
@@ -410,17 +328,20 @@ describe('llamaindex/index', () => {
 
     it('should throw error for empty question', async () => {
       // Act & Assert
-      await expect(queryRAGStream('')).rejects.toThrow(
-        'Question cannot be empty'
-      );
-      await expect(queryRAGStream('   ')).rejects.toThrow(
-        'Question cannot be empty'
-      );
+      await expect(queryRAG('')).rejects.toThrow('Question cannot be empty');
+      await expect(queryRAG('   ')).rejects.toThrow('Question cannot be empty');
     });
 
     it('should handle case when no relevant documents are found', async () => {
       // Arrange
       const question = 'What is this document about?';
+      const mockMemory = {
+        add: vi.fn().mockResolvedValue(undefined),
+        getAll: vi.fn().mockResolvedValue([]),
+        getLLM: vi
+          .fn()
+          .mockResolvedValue([{ role: 'user', content: question }]),
+      };
       const mockRetriever = {
         retrieve: vi.fn().mockResolvedValue([]),
       };
@@ -435,9 +356,10 @@ describe('llamaindex/index', () => {
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
         mockIndex as never
       );
+      vi.mocked(createMemory).mockReturnValue(mockMemory as never);
 
       // Act
-      const result = await queryRAGStream(question);
+      const result = await queryRAG(question);
 
       // Assert
       expect(mockRetriever.retrieve).toHaveBeenCalledExactlyOnceWith(question);
@@ -467,6 +389,13 @@ describe('llamaindex/index', () => {
     it('should handle streaming API errors gracefully', async () => {
       // Arrange
       const question = 'What is this document about?';
+      const mockMemory = {
+        add: vi.fn().mockResolvedValue(undefined),
+        getAll: vi.fn().mockResolvedValue([]),
+        getLLM: vi
+          .fn()
+          .mockResolvedValue([{ role: 'user', content: question }]),
+      };
       const mockRetriever = {
         retrieve: vi.fn().mockResolvedValue([
           {
@@ -494,11 +423,12 @@ describe('llamaindex/index', () => {
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
         mockIndex as never
       );
+      vi.mocked(createMemory).mockReturnValue(mockMemory as never);
 
       vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
 
       // Act & Assert
-      await expect(queryRAGStream(question)).rejects.toThrow(
+      await expect(queryRAG(question)).rejects.toThrow(
         'HTTP 500: Internal Server Error'
       );
     });
@@ -506,6 +436,13 @@ describe('llamaindex/index', () => {
     it('should handle missing response body', async () => {
       // Arrange
       const question = 'What is this document about?';
+      const mockMemory = {
+        add: vi.fn().mockResolvedValue(undefined),
+        getAll: vi.fn().mockResolvedValue([]),
+        getLLM: vi
+          .fn()
+          .mockResolvedValue([{ role: 'user', content: question }]),
+      };
       const mockRetriever = {
         retrieve: vi.fn().mockResolvedValue([
           {
@@ -532,13 +469,77 @@ describe('llamaindex/index', () => {
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
         mockIndex as never
       );
+      vi.mocked(createMemory).mockReturnValue(mockMemory as never);
 
       vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
 
       // Act & Assert
-      await expect(queryRAGStream(question)).rejects.toThrow(
+      await expect(queryRAG(question)).rejects.toThrow(
         'No response body received'
       );
+    });
+
+    it('should use provided memory instead of global memory', async () => {
+      // Arrange
+      const question = 'What is this document about?';
+      const customMemory = {
+        add: vi.fn().mockResolvedValue(undefined),
+        getAll: vi.fn().mockResolvedValue([]),
+        getLLM: vi
+          .fn()
+          .mockResolvedValue([{ role: 'user', content: question }]),
+      };
+      const mockRetriever = {
+        retrieve: vi.fn().mockResolvedValue([
+          {
+            node: {
+              getContent: vi.fn().mockReturnValue('Document content chunk'),
+            },
+            score: 0.85,
+          },
+        ]),
+      };
+
+      // Mock SSE response
+      const mockStreamResponse = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"candidates":[{"content":{"parts":[{"text":"Response"}]}}]}\n'
+            )
+          );
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n'));
+          controller.close();
+        },
+      });
+
+      const mockFetchResponse = {
+        ok: true,
+        body: mockStreamResponse,
+      };
+
+      // Mock the fs calls to simulate files existing
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('Test document content');
+      vi.mocked(Document).mockReturnValue({} as never);
+      const mockIndex = {
+        asRetriever: vi.fn().mockReturnValue(mockRetriever),
+      };
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+
+      vi.mocked(fetch).mockResolvedValue(mockFetchResponse as never);
+
+      // Act
+      await queryRAG(question, customMemory as never);
+
+      // Assert
+      expect(customMemory.add).toHaveBeenCalledWith({
+        role: 'user',
+        content: question,
+      });
+      expect(vi.mocked(createMemory)).not.toHaveBeenCalled();
     });
   });
 
