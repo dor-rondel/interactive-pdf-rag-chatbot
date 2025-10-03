@@ -65,7 +65,7 @@ describe('ingestion', () => {
   });
 
   describe('generateEmbeddings', () => {
-    it('should process PDF and create embeddings successfully', async () => {
+    it('should process PDF with page awareness and create embeddings successfully', async () => {
       // Arrange
       const testBuffer = Buffer.from('test pdf content');
       const mockVectorStore = {
@@ -77,15 +77,24 @@ describe('ingestion', () => {
         },
       };
 
+      const testText = 'Page 1 content\f\nPage 2 content';
       mockPdfParseFunction.mockResolvedValue({
-        text: 'Extracted PDF text content',
-        numpages: 1,
-        numrender: 1,
+        text: testText,
+        numpages: 2,
+        numrender: 2,
         info: {},
         metadata: {},
         version: '1.0',
       });
-      vi.mocked(Document).mockReturnValue({} as never);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockDocuments: any[] = [];
+      vi.mocked(Document).mockImplementation(
+        (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          config: any
+        ) => mockDocuments.push(config) && config
+      );
       vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
         mockIndex as never
       );
@@ -96,19 +105,37 @@ describe('ingestion', () => {
 
       // Assert
       expect(mockPdfParseFunction).toHaveBeenCalledExactlyOnceWith(testBuffer);
-      expect(Document).toHaveBeenCalledExactlyOnceWith({
-        text: 'Extracted PDF text content',
-        id_: 'pdf-document',
+      expect(Document).toHaveBeenCalledTimes(2);
+      expect(Document).toHaveBeenNthCalledWith(1, {
+        text: 'Page 1 content',
+        id_: 'page-1',
+        metadata: {
+          page: 1,
+          source: 'pdf-document',
+        },
       });
-      expect(VectorStoreIndex.fromDocuments).toHaveBeenCalledExactlyOnceWith([
-        {},
-      ]);
+      expect(Document).toHaveBeenNthCalledWith(2, {
+        text: 'Page 2 content',
+        id_: 'page-2',
+        metadata: {
+          page: 2,
+          source: 'pdf-document',
+        },
+      });
+      expect(VectorStoreIndex.fromDocuments).toHaveBeenCalledExactlyOnceWith(
+        mockDocuments
+      );
       expect(fs.mkdirSync).toHaveBeenCalledExactlyOnceWith('./data', {
         recursive: true,
       });
-      expect(fs.writeFileSync).toHaveBeenCalledExactlyOnceWith(
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        './data/pages.json',
+        expect.stringContaining('"page": 1'),
+        'utf8'
+      );
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
         './data/document.txt',
-        'Extracted PDF text content',
+        testText,
         'utf8'
       );
       expect(mockVectorStore.persist).toHaveBeenCalledExactlyOnceWith(
@@ -116,6 +143,156 @@ describe('ingestion', () => {
       );
       expect(result).toBe(mockIndex);
       expect(getGlobalIndex()).toBe(mockIndex);
+    });
+
+    it('should split pages using generic page markers correctly', async () => {
+      // Arrange
+      const testBuffer = Buffer.from('test pdf content');
+      const mockVectorStore = {
+        persist: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockIndex = {
+        storageContext: {
+          vectorStores: { test: mockVectorStore },
+        },
+      };
+
+      const testText =
+        'Introduction content\f\nMiddle content\f\nFinal content';
+      mockPdfParseFunction.mockResolvedValue({
+        text: testText,
+        numpages: 3,
+        numrender: 3,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockDocuments: any[] = [];
+      vi.mocked(Document).mockImplementation(
+        (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          config: any
+        ) => mockDocuments.push(config) && config
+      );
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      // Act
+      await generateEmbeddings(testBuffer);
+
+      // Assert
+      expect(Document).toHaveBeenCalledTimes(3);
+      expect(mockDocuments[0]).toStrictEqual({
+        text: 'Introduction content',
+        id_: 'page-1',
+        metadata: {
+          page: 1,
+          source: 'pdf-document',
+        },
+      });
+      expect(mockDocuments[1]).toStrictEqual({
+        text: 'Middle content',
+        id_: 'page-2',
+        metadata: {
+          page: 2,
+          source: 'pdf-document',
+        },
+      });
+      expect(mockDocuments[2]).toStrictEqual({
+        text: 'Final content',
+        id_: 'page-3',
+        metadata: {
+          page: 3,
+          source: 'pdf-document',
+        },
+      });
+    });
+
+    it('should use equal-size fallback when no page markers found', async () => {
+      // Arrange
+      const testBuffer = Buffer.from('test pdf content');
+      const mockVectorStore = {
+        persist: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockIndex = {
+        storageContext: {
+          vectorStores: { test: mockVectorStore },
+        },
+      };
+
+      const testText = 'This is a simple document without any page markers';
+      mockPdfParseFunction.mockResolvedValue({
+        text: testText,
+        numpages: 2,
+        numrender: 2,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockDocuments: any[] = [];
+      vi.mocked(Document).mockImplementation(
+        (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          config: any
+        ) => mockDocuments.push(config) && config
+      );
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      // Act
+      await generateEmbeddings(testBuffer);
+
+      // Assert
+      expect(Document).toHaveBeenCalledTimes(2);
+      expect(mockDocuments).toHaveLength(2);
+      expect(mockDocuments[0].metadata.page).toBe(1);
+      expect(mockDocuments[1].metadata.page).toBe(2);
+    });
+
+    it('should handle simple text without special debugging', async () => {
+      // Arrange
+      const testBuffer = Buffer.from('test pdf content');
+      const mockVectorStore = {
+        persist: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockIndex = {
+        storageContext: {
+          vectorStores: { test: mockVectorStore },
+        },
+      };
+
+      const testText =
+        'Page 1 content\f\nThis content mentions general professional requirements.';
+      mockPdfParseFunction.mockResolvedValue({
+        text: testText,
+        numpages: 2,
+        numrender: 2,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+
+      vi.mocked(Document).mockReturnValue({} as never);
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      // Act
+      await generateEmbeddings(testBuffer);
+
+      // Assert - No special debug messages expected with generic approach
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('Found medical text')
+      );
     });
 
     it('should throw error for empty buffer', async () => {
@@ -150,7 +327,26 @@ describe('ingestion', () => {
 
       // Act & Assert
       await expect(generateEmbeddings(testBuffer)).rejects.toThrow(
-        'No text content found in PDF. The PDF might be image-based, corrupted, or protected.'
+        'No text content found in PDF'
+      );
+    });
+
+    it('should throw error when PDF has only whitespace content', async () => {
+      // Arrange
+      const testBuffer = Buffer.from('test pdf content');
+
+      mockPdfParseFunction.mockResolvedValue({
+        text: '   \n\t   ', // Only whitespace
+        numpages: 1,
+        numrender: 1,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+
+      // Act & Assert
+      await expect(generateEmbeddings(testBuffer)).rejects.toThrow(
+        'No text content found in PDF'
       );
     });
 
@@ -162,7 +358,7 @@ describe('ingestion', () => {
 
       // Act & Assert
       await expect(generateEmbeddings(testBuffer)).rejects.toThrow(
-        'Failed to parse PDF: PDF parsing failed'
+        'Failed to process PDF: PDF parsing failed'
       );
     });
 
@@ -179,7 +375,7 @@ describe('ingestion', () => {
       };
 
       mockPdfParseFunction.mockResolvedValue({
-        text: 'Extracted PDF text content',
+        text: 'Simple PDF text content',
         numpages: 1,
         numrender: 1,
         info: {},
@@ -199,7 +395,7 @@ describe('ingestion', () => {
       expect(result).toBe(mockIndex);
       expect(getGlobalIndex()).toBe(mockIndex);
       expect(console.error).toHaveBeenCalledWith(
-        '❌ Failed to persist index:',
+        'Failed to persist PDF data:',
         expect.any(Error)
       );
     });
@@ -217,7 +413,7 @@ describe('ingestion', () => {
       };
 
       mockPdfParseFunction.mockResolvedValue({
-        text: 'Extracted PDF text content',
+        text: 'Simple PDF text content',
         numpages: 1,
         numrender: 1,
         info: {},
@@ -236,6 +432,101 @@ describe('ingestion', () => {
       // Assert
       expect(fs.mkdirSync).not.toHaveBeenCalled();
       expect(result).toBe(mockIndex);
+    });
+
+    it('should handle form feed page breaks correctly', async () => {
+      // Arrange
+      const testBuffer = Buffer.from('test pdf content');
+      const mockVectorStore = {
+        persist: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockIndex = {
+        storageContext: {
+          vectorStores: { test: mockVectorStore },
+        },
+      };
+
+      const testText = 'Page 1 content\f\nPage 2 content\f\nPage 3 content';
+      mockPdfParseFunction.mockResolvedValue({
+        text: testText,
+        numpages: 3,
+        numrender: 3,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockDocuments: any[] = [];
+      vi.mocked(Document).mockImplementation(
+        (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          config: any
+        ) => mockDocuments.push(config) && config
+      );
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      // Act
+      await generateEmbeddings(testBuffer);
+
+      // Assert
+      expect(Document).toHaveBeenCalledTimes(3);
+      expect(mockDocuments[0]).toStrictEqual({
+        text: 'Page 1 content',
+        id_: 'page-1',
+        metadata: {
+          page: 1,
+          source: 'pdf-document',
+        },
+      });
+    });
+
+    it('should adjust page count when detection produces different number of pages', async () => {
+      // Arrange
+      const testBuffer = Buffer.from('test pdf content');
+      const mockVectorStore = {
+        persist: vi.fn().mockResolvedValue(undefined),
+      };
+      const mockIndex = {
+        storageContext: {
+          vectorStores: { test: mockVectorStore },
+        },
+      };
+
+      // Text with only one page break but expecting 3 pages
+      const testText =
+        'Page 1 content\f\nLong page 2 content that should be split into multiple parts when needed';
+      mockPdfParseFunction.mockResolvedValue({
+        text: testText,
+        numpages: 3,
+        numrender: 3,
+        info: {},
+        metadata: {},
+        version: '1.0',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockDocuments: any[] = [];
+      vi.mocked(Document).mockImplementation(
+        (
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          config: any
+        ) => mockDocuments.push(config) && config
+      );
+      vi.mocked(VectorStoreIndex.fromDocuments).mockResolvedValue(
+        mockIndex as never
+      );
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      // Act
+      await generateEmbeddings(testBuffer);
+
+      // Assert
+      expect(Document).toHaveBeenCalledTimes(3);
+      expect(mockDocuments).toHaveLength(3);
     });
   });
 });

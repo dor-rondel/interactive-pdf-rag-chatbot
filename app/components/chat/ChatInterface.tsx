@@ -89,8 +89,8 @@ export function ChatInterface({
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = '';
-      let sources: Array<{ content: string; score: number }> = [];
-
+      let sources: Array<{ content: string; score: number; page?: number }> =
+        [];
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -175,6 +175,14 @@ export function ChatInterface({
     }
   };
 
+  /**
+   * Handles clicking on a page reference to navigate to that page in the PDF viewer
+   * @param pageNumber - The page number to navigate to
+   */
+  const handlePageClick = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+  };
+
   return (
     <div className="flex flex-col md:flex-row flex-1 border border-neutral-200 rounded-lg shadow-lg max-h-[calc(100vh-128px)]">
       <div className="flex flex-col w-full md:w-1/2 p-2 flex-1 max-h-full min-h-0">
@@ -184,7 +192,7 @@ export function ChatInterface({
         >
           &lt; Back to Upload
         </button>
-        <MessageList messages={messages} />
+        <MessageList messages={messages} onPageClick={handlePageClick} />
         <MessageInput onSendMessage={handleSendMessage} isLoading={isLoading} />
       </div>
       <div className="w-full md:w-1/2 bg-gray-200 min-h-64 md:flex-1">

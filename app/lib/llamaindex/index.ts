@@ -16,8 +16,9 @@ if (!apiKey) {
 }
 
 Settings.embedModel = createGeminiEmbedding(apiKey, GEMINI_EMBEDDING_MODEL);
-Settings.chunkSize = 512;
-Settings.chunkOverlap = 20;
+// Disable automatic chunking since we handle chunking manually with page awareness
+Settings.chunkSize = 2048; // Large chunk size to prevent re-chunking our documents
+Settings.chunkOverlap = 0; // No overlap since we handle this manually
 
 // Re-export functions to maintain API compatibility
 export {
@@ -30,10 +31,10 @@ export {
 
 /**
  * Perform streaming RAG query with conversation memory
- * Always returns streaming response with conversation context
+ * Always returns streaming response with conversation context and page numbers
  * @param question - The user's question
  * @param memory - Optional Memory instance (uses global if not provided)
- * @returns Promise<{stream: ReadableStream<Uint8Array>, sources: Array<{content: string, score: number}>}> - Streaming response with sources
+ * @returns Promise<{stream: ReadableStream<Uint8Array>, sources: Array<{content: string, score: number, page?: number}>}> - Streaming response with sources
  * @throws Error if retrieval or generation fails
  */
 export async function queryRAG(
@@ -41,7 +42,7 @@ export async function queryRAG(
   memory?: Memory
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
-  sources: Array<{ content: string; score: number }>;
+  sources: Array<{ content: string; score: number; page?: number }>;
 }> {
   if (!question.trim()) {
     throw new Error('Question cannot be empty');
@@ -143,14 +144,22 @@ export async function queryRAG(
       },
     });
 
-    // Return streaming response with sources
+    // Return streaming response with sources including page numbers
     return {
       stream: streamWithMemory,
-      sources: retrievalResult.map((result: NodeWithScore) => ({
-        content:
-          result.node.getContent(MetadataMode.NONE).substring(0, 200) + '...',
-        score: result.score || 0,
-      })),
+      sources: retrievalResult.map((result: NodeWithScore) => {
+        const node = result.node;
+        const metadata = node.metadata;
+
+        // Extract page number from metadata if available
+        const page = metadata?.page ? Number(metadata.page) : undefined;
+
+        return {
+          content: node.getContent(MetadataMode.NONE).substring(0, 200) + '...',
+          score: result.score || 0,
+          page,
+        };
+      }),
     };
   } catch (error) {
     console.error('Error in RAG query:', error);

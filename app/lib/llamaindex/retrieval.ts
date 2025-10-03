@@ -19,11 +19,56 @@ export async function getRetriever() {
   // Try to reload from persisted data
   try {
     const dataDir = './data';
+    const pagesPath = `${dataDir}/pages.json`;
     const textPath = `${dataDir}/document.txt`;
     const vectorStorePath = `${dataDir}/vector_store.json`;
 
     // Check if required files exist
-    if (!fs.existsSync(textPath) || !fs.existsSync(vectorStorePath)) {
+    if (!fs.existsSync(vectorStorePath)) {
+      throw new Error('Vector store not found. Please upload a PDF first.');
+    }
+
+    // Try to load page-aware data first
+    if (fs.existsSync(pagesPath)) {
+      try {
+        const pagesData = JSON.parse(fs.readFileSync(pagesPath, 'utf8'));
+
+        if (!Array.isArray(pagesData) || pagesData.length === 0) {
+          throw new Error('Invalid pages data format.');
+        }
+
+        // Recreate documents with page metadata
+        const documents = pagesData
+          .map((pageData: { page: number; text: string }) => {
+            return new Document({
+              text: pageData.text,
+              id_: `pdf-document-page-${pageData.page}`,
+              metadata: {
+                page: pageData.page,
+                source: 'pdf-document',
+              },
+            });
+          })
+          .filter((doc) => doc.text.trim().length > 0);
+
+        if (documents.length === 0) {
+          throw new Error('No valid documents found in pages data.');
+        }
+
+        const index = await VectorStoreIndex.fromDocuments(documents);
+        setGlobalIndex(index);
+
+        return index.asRetriever();
+      } catch (pageError) {
+        console.warn(
+          'Failed to load page-aware data, falling back to legacy format:',
+          pageError
+        );
+      }
+    }
+
+    // Fallback to legacy single-document format
+    if (!fs.existsSync(textPath)) {
       throw new Error('Vector store not found. Please upload a PDF first.');
     }
 
@@ -34,14 +79,13 @@ export async function getRetriever() {
       throw new Error('Persisted document text is empty or invalid.');
     }
 
-    // Recreate the document and index
+    // Recreate the document and index (legacy format without page info)
     const doc = new Document({ text, id_: 'pdf-document' });
     const index = await VectorStoreIndex.fromDocuments([doc]);
 
     // Cache the loaded index globally
     setGlobalIndex(index);
 
-    console.log('✅ Index recreated from persisted data');
     return index.asRetriever();
   } catch (error) {
     console.error('Error loading retriever:', error);
