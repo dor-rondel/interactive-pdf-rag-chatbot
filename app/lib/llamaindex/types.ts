@@ -32,12 +32,14 @@ export type ChatRequest = {
 export type ChatResponse = {
   /** AI assistant's response message */
   message: string;
-  /** Optional source references with content and relevance scores */
+  /** Optional source references with content, relevance scores, and page numbers */
   sources?: Array<{
     /** Source content snippet */
     content: string;
     /** Relevance score between 0 and 1 */
     score: number;
+    /** Page number where this content was found (optional for backward compatibility) */
+    page?: number;
   }>;
 };
 
@@ -55,6 +57,8 @@ export type StreamSources = {
   sources: Array<{
     content: string;
     score: number;
+    /** Page number where this content was found (optional for backward compatibility) */
+    page?: number;
   }>;
 };
 

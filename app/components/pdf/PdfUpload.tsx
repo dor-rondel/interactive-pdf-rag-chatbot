@@ -1,37 +1,39 @@
 'use client';
 
-import { useActionState, useEffect } from 'react';
-import { useFormStatus } from 'react-dom';
-import { uploadPdfAction } from '@/app/actions/upload';
 import { useState } from 'react';
-
-const initialState = {
-  error: null,
-};
 
 /**
  * Submit button component that shows upload status and handles form submission.
  * Disabled when no file is selected or upload is in progress.
  *
  * @param file - The selected file object, null if no file selected
+ * @param isUploading - Whether upload is currently in progress
+ * @param onSubmit - Function to call when submit button is clicked
  */
-function SubmitButton({ file }: { file: File | null }) {
-  const { pending } = useFormStatus();
-
+function SubmitButton({
+  file,
+  isUploading,
+  onSubmit,
+}: {
+  file: File | null;
+  isUploading: boolean;
+  onSubmit: () => void;
+}) {
   return (
     <button
-      type="submit"
+      type="button"
+      onClick={onSubmit}
       className="w-full px-4 py-2 mt-6 text-sm font-medium text-white transition-colors duration-200 ease-in-out rounded-md bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:bg-primary-300"
-      disabled={pending || !file}
+      disabled={isUploading || !file}
     >
-      {pending ? 'Uploading...' : 'Upload'}
+      {isUploading ? 'Uploading...' : 'Upload'}
     </button>
   );
 }
 
 /**
  * PDF upload component that provides drag-and-drop file selection and upload functionality.
- * Manages file state, handles upload actions, and provides user feedback.
+ * Uses REST API endpoint for handling large file uploads.
  *
  * @param onUploadSuccess - Callback function called when upload completes successfully
  */
@@ -40,14 +42,38 @@ export function PdfUpload({
 }: {
   onUploadSuccess: (file: File) => void;
 }) {
-  const [state, formAction] = useActionState(uploadPdfAction, initialState);
   const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (state !== initialState && state.error === null && file) {
+  const handleSubmit = async () => {
+    if (!file) return;
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Upload failed');
+      }
+
       onUploadSuccess(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsUploading(false);
     }
-  }, [state, onUploadSuccess, file]);
+  };
 
   return (
     <div className="flex flex-col items-center justify-center w-full max-w-lg p-8 mx-auto bg-white border-2 border-dashed rounded-lg border-neutral-100 dark:bg-neutral-900 dark:border-neutral-800">
@@ -59,15 +85,7 @@ export function PdfUpload({
           Drag and drop your file or click to browse.
         </p>
       </div>
-      <form
-        action={(formData) => {
-          if (file) {
-            formData.append('file', file);
-            formAction(formData);
-          }
-        }}
-        className="mt-6 w-full"
-      >
+      <div className="mt-6 w-full">
         <div className="flex items-center justify-center w-full">
           <label
             htmlFor="file-upload"
@@ -86,11 +104,13 @@ export function PdfUpload({
             </p>
           </label>
         </div>
-        <SubmitButton file={file} />
-        {state?.error && (
-          <p className="mt-2 text-sm text-red-500">{state.error}</p>
-        )}
-      </form>
+        <SubmitButton
+          file={file}
+          isUploading={isUploading}
+          onSubmit={handleSubmit}
+        />
+        {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+      </div>
     </div>
   );
 }

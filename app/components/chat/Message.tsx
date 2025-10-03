@@ -6,19 +6,29 @@ type MessageProps = {
   sources?: Array<{
     content: string;
     score: number;
+    page?: number;
   }>;
+  onPageClick?: (pageNumber: number) => void;
 };
 
 /**
  * Individual message component that displays a chat message with styling based on sender.
- * Supports displaying source references for bot messages with relevance scores.
+ * Supports displaying source references for bot messages with relevance scores and page numbers.
+ * Page numbers are clickable to navigate to the corresponding PDF page.
  *
  * @param text - The message text content
  * @param sender - Who sent the message ('user' or 'bot')
- * @param sources - Optional array of source references with content and relevance scores
+ * @param sources - Optional array of source references with content, relevance scores, and page numbers
+ * @param onPageClick - Optional callback when a page reference is clicked
  */
-export function Message({ text, sender, sources }: MessageProps) {
+export function Message({ text, sender, sources, onPageClick }: MessageProps) {
   const isUser = sender === 'user';
+
+  const handlePageClick = (pageNumber: number) => {
+    if (onPageClick) {
+      onPageClick(pageNumber);
+    }
+  };
 
   return (
     <div
@@ -43,9 +53,20 @@ export function Message({ text, sender, sources }: MessageProps) {
                 key={index}
                 className="text-xs opacity-80 mb-1 p-2 bg-black/10 dark:bg-white/10 rounded"
               >
-                <div className="truncate">{source.content}</div>
-                <div className="text-right mt-1">
-                  Score: {(source.score * 100).toFixed(1)}%
+                <div className="truncate mb-1">{source.content}</div>
+                <div className="flex justify-between items-center">
+                  <div className="text-right">
+                    Score: {(source.score * 100).toFixed(1)}%
+                  </div>
+                  {source.page && (
+                    <button
+                      onClick={() => handlePageClick(source.page!)}
+                      className="text-xs px-2 py-1 rounded bg-primary-500 text-white hover:bg-primary-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                      title={`Go to page ${source.page}`}
+                    >
+                      Page {source.page}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

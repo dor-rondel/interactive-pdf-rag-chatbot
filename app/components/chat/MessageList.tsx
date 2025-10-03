@@ -9,8 +9,15 @@ import { MessageProps } from './types';
  * Automatically scrolls to the bottom when new messages are added.
  *
  * @param messages - Array of message objects to display
+ * @param onPageClick - Optional callback when a page reference is clicked
  */
-export function MessageList({ messages }: { messages: MessageProps[] }) {
+export function MessageList({
+  messages,
+  onPageClick,
+}: {
+  messages: MessageProps[];
+  onPageClick?: (pageNumber: number) => void;
+}) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -32,6 +39,7 @@ export function MessageList({ messages }: { messages: MessageProps[] }) {
           text={msg.text}
           sender={msg.sender}
           sources={msg.sources}
+          onPageClick={onPageClick}
         />
       ))}
       <div ref={messagesEndRef} />

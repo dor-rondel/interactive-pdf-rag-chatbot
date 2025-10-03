@@ -118,6 +118,7 @@ describe('llamaindex/index', () => {
         {
           content: 'Document content chunk...',
           score: 0.85,
+          page: undefined,
         },
       ]);
       expect(result.stream).toBeInstanceOf(ReadableStream);
