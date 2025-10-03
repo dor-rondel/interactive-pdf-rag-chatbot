@@ -40,18 +40,17 @@ export function Message({ text, sender, sources, onPageClick }: MessageProps) {
       <div
         className={cn('px-4 py-2 rounded-lg max-w-[80%]', {
           'bg-primary-500 text-white': isUser,
-          'bg-neutral-200 text-neutral-900 dark:bg-neutral-700 dark:text-neutral-50':
-            !isUser,
+          'bg-neutral-200 text-neutral-900': !isUser,
         })}
       >
         <div>{text}</div>
         {sources && sources.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-neutral-300 dark:border-neutral-600">
+          <div className="mt-2 pt-2 border-t border-neutral-300">
             <div className="text-xs opacity-70 mb-1">Sources:</div>
             {sources.map((source, index) => (
               <div
                 key={index}
-                className="text-xs opacity-80 mb-1 p-2 bg-black/10 dark:bg-white/10 rounded"
+                className="text-xs opacity-80 mb-1 p-2 bg-black/10 rounded"
               >
                 <div className="truncate mb-1">{source.content}</div>
                 <div className="flex justify-between items-center">
