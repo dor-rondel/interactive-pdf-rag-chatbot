@@ -11,6 +11,7 @@ A key feature is the ability to scroll to the source of information in the PDF, 
 ### Core Stack
 
 - **Framework**: Next.js 15 (full-stack)
+- **Framework**: Next.js 16 (full-stack)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **Testing**: Vitest (unit/integration) + Playwright (E2E)
@@ -23,7 +24,7 @@ A key feature is the ability to scroll to the source of information in the PDF, 
 ### Key Components
 
 ```
-/app                    # Next.js 15 app router
+/app                    # Next.js 16 app router
   /actions              # Server Actions
     /upload.ts             # PDF upload action (includes chunking & embedding)
   /api                  # API routes
@@ -46,6 +47,12 @@ A key feature is the ability to scroll to the source of information in the PDF, 
 This project uses environment variables to manage sensitive information like API keys. A `.env.local.example` file is provided to show the required variables. Copy this file to `.env.local` and fill in the values.
 
 - `GEMINI_API_KEY`: Your API key for the Gemini models.
+
+Optional tracing via Langfuse (OpenTelemetry):
+
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `LANGFUSE_BASE_URL` (defaults to `https://cloud.langfuse.com`)
 
 ## Development Workflow
 

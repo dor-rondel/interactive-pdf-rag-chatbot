@@ -1,6 +1,10 @@
 import 'server-only';
 
 import { GEMINI_MODEL } from '@/app/lib/constants/gemini';
+import {
+  startObservation,
+  type LangfuseGenerationAttributes,
+} from '@langfuse/tracing';
 
 /**
  * Call Gemini LLM with streaming response
@@ -19,6 +23,38 @@ export async function callGeminiLLMStream(
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY environment variable is required');
   }
+
+  const langfuseEnabled = Boolean(
+    process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY
+  );
+  const generation = langfuseEnabled
+    ? startObservation(
+        'gemini.streamGenerateContent',
+        {
+          model: GEMINI_MODEL,
+          input: {
+            promptLength: prompt.length,
+          },
+          metadata: {
+            endpoint: 'streamGenerateContent',
+          },
+        },
+        { asType: 'generation' }
+      )
+    : null;
+
+  const requestStartTime = Date.now();
+  let generationEnded = false;
+  const endGeneration = (attributes?: LangfuseGenerationAttributes) => {
+    if (!generation || generationEnded) {
+      return;
+    }
+    generationEnded = true;
+    if (attributes) {
+      generation.update(attributes);
+    }
+    generation.end();
+  };
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
@@ -39,24 +75,54 @@ export async function callGeminiLLMStream(
 
     if (!response.ok) {
       const errorText = await response.text();
+      endGeneration({
+        level: 'ERROR',
+        statusMessage: `HTTP ${response.status}`,
+        output: {
+          error: errorText.slice(0, 2000),
+        },
+        metadata: {
+          durationMs: Date.now() - requestStartTime,
+          status: response.status,
+        },
+      });
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
     if (!response.body) {
+      endGeneration({
+        level: 'ERROR',
+        statusMessage: 'No response body received',
+        metadata: {
+          durationMs: Date.now() - requestStartTime,
+        },
+      });
       throw new Error('No response body received');
     }
 
     // Transform the SSE stream to extract just the text content
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let aggregatedText = '';
+
     return new ReadableStream({
       start(controller) {
-        const reader = response.body!.getReader();
+        reader = response.body!.getReader();
         const decoder = new TextDecoder();
 
         function processStream() {
-          reader
+          reader!
             .read()
             .then(({ done, value }) => {
               if (done) {
+                endGeneration({
+                  output: {
+                    textLength: aggregatedText.length,
+                    textPreview: aggregatedText.slice(0, 2000),
+                  },
+                  metadata: {
+                    durationMs: Date.now() - requestStartTime,
+                  },
+                });
                 controller.close();
                 return;
               }
@@ -78,6 +144,7 @@ export async function callGeminiLLMStream(
                       data.candidates?.[0]?.content?.parts?.[0]?.text;
 
                     if (text) {
+                      aggregatedText += text;
                       controller.enqueue(new TextEncoder().encode(text));
                     }
                   } catch (parseError) {
@@ -91,15 +158,45 @@ export async function callGeminiLLMStream(
             })
             .catch((error) => {
               console.error('Stream reading error:', error);
+              endGeneration({
+                level: 'ERROR',
+                statusMessage:
+                  error instanceof Error ? error.message : 'Stream error',
+                metadata: {
+                  durationMs: Date.now() - requestStartTime,
+                },
+              });
               controller.error(error);
             });
         }
 
         processStream();
       },
+      cancel(reason) {
+        if (reader) {
+          reader.cancel(reason).catch(() => {
+            // ignore
+          });
+        }
+
+        endGeneration({
+          level: 'WARNING',
+          statusMessage: 'Client cancelled stream',
+          metadata: {
+            durationMs: Date.now() - requestStartTime,
+          },
+        });
+      },
     });
   } catch (error) {
     console.error('Error calling Gemini LLM stream:', error);
+    endGeneration({
+      level: 'ERROR',
+      statusMessage: error instanceof Error ? error.message : 'Unknown error',
+      metadata: {
+        durationMs: Date.now() - requestStartTime,
+      },
+    });
     throw error;
   }
 }

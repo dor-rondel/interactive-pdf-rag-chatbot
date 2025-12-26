@@ -14,7 +14,7 @@ A RAG chatbot that enables users to upload PDF files as knowledge bases and chat
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (full-stack)
+- **Framework**: Next.js 16 (full-stack)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **Testing**: Vitest (unit/integration)
@@ -28,7 +28,7 @@ A RAG chatbot that enables users to upload PDF files as knowledge bases and chat
 
 ### Prerequisites
 
-- Node.js >= 18.x
+- Node.js >= 20.x
 - pnpm
 - A Gemini API key.
 
@@ -54,6 +54,23 @@ A RAG chatbot that enables users to upload PDF files as knowledge bases and chat
     ```
     GEMINI_API_KEY=your-api-key
     ```
+
+### Langfuse Tracing (Optional)
+
+This project can emit traces to Langfuse (via OpenTelemetry) for:
+
+- Gemini LLM streaming calls
+- Gemini embedding calls
+
+Add the following to `.env.local` to enable it:
+
+```dotenv
+LANGFUSE_PUBLIC_KEY=pk_...
+LANGFUSE_SECRET_KEY=sk_...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+```
+
+If `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` are not set, tracing stays disabled.
 
 ### Running the Development Server
 
