@@ -44,6 +44,24 @@ describe('PdfUpload', () => {
     ).toBeInTheDocument();
   });
 
+  it('should allow selecting a PDF via drag-and-drop', () => {
+    render(<PdfUpload onUploadSuccess={onUploadSuccess} />);
+
+    const file = new File(['hello'], 'hello.pdf', { type: 'application/pdf' });
+    const fileInput = screen.getByLabelText(/select a pdf file/i);
+    const dropZone = fileInput.parentElement;
+    expect(dropZone).toBeTruthy();
+
+    fireEvent.dragOver(dropZone as Element, {
+      dataTransfer: { files: [file] },
+    });
+    fireEvent.drop(dropZone as Element, {
+      dataTransfer: { files: [file] },
+    });
+
+    expect(screen.getByText('hello.pdf')).toBeInTheDocument();
+  });
+
   it('should call fetch API when form is submitted with file', async () => {
     // Mock successful response first
     vi.mocked(fetch).mockResolvedValue({

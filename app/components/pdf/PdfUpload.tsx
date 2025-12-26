@@ -45,6 +45,17 @@ export function PdfUpload({
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const setSelectedFile = (nextFile: File | null) => {
+    setFile(nextFile);
+    setError(null);
+  };
+
+  const isPdfFile = (candidate: File) => {
+    const name = candidate.name.toLowerCase();
+    return candidate.type === 'application/pdf' || name.endsWith('.pdf');
+  };
 
   const handleSubmit = async () => {
     if (!file) return;
@@ -75,6 +86,25 @@ export function PdfUpload({
     }
   };
 
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (isUploading) return;
+
+    const droppedFile = e.dataTransfer.files?.[0] ?? null;
+    if (!droppedFile) return;
+
+    if (!isPdfFile(droppedFile)) {
+      setFile(null);
+      setError('Please select a PDF file');
+      return;
+    }
+
+    setSelectedFile(droppedFile);
+  };
+
   return (
     <div className="flex flex-col items-center justify-center w-full max-w-lg p-8 mx-auto bg-white border-2 border-dashed rounded-lg border-neutral-100">
       <div className="text-center">
@@ -89,7 +119,20 @@ export function PdfUpload({
         <div className="flex items-center justify-center w-full">
           <label
             htmlFor="file-upload"
-            className="relative w-full px-4 py-6 text-center transition-colors duration-200 ease-in-out border-2 border-dashed rounded-lg cursor-pointer border-neutral-300 bg-neutral-50 hover:bg-neutral-100"
+            className={`relative w-full px-4 py-6 text-center transition-colors duration-200 ease-in-out border-2 border-dashed rounded-lg cursor-pointer border-neutral-300 bg-neutral-50 hover:bg-neutral-100 ${
+              isDragging ? 'bg-neutral-100' : ''
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!isUploading) setIsDragging(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragging(false);
+            }}
+            onDrop={handleDrop}
           >
             <input
               id="file-upload"
@@ -97,7 +140,21 @@ export function PdfUpload({
               type="file"
               className="sr-only"
               accept=".pdf"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const pickedFile = e.target.files?.[0] ?? null;
+                if (!pickedFile) {
+                  setSelectedFile(null);
+                  return;
+                }
+
+                if (!isPdfFile(pickedFile)) {
+                  setFile(null);
+                  setError('Please select a PDF file');
+                  return;
+                }
+
+                setSelectedFile(pickedFile);
+              }}
             />
             <p className="text-sm text-neutral-500">
               {file ? file.name : 'Select a PDF file'}
