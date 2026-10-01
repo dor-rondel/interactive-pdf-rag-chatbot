@@ -12,22 +12,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
       - name: Use Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '24.x'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm i
+        run: pnpm install --frozen-lockfile
 
       - name: Check ESLint
-        run: npm run lint
+        run: pnpm lint
 
       - name: Check Unit Tests
-        run: npm run test:unit
+        run: pnpm test:unit
 
       - name: Prettier Styling Check
-        run: npm run format:check
+        run: pnpm format:check
 
       - name: Check Build
-        run: npm run build
+        run: pnpm build
