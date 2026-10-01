@@ -1,4 +1,5 @@
 import { ChatOrUpload } from './components/ChatOrUpload';
+import Footer from './components/Footer';
 import Header from './components/Header';
 
 /**
@@ -12,6 +13,7 @@ export default function Home() {
       <div className="flex flex-1 w-full text-left">
         <ChatOrUpload />
       </div>
+      <Footer />
     </main>
   );
 }
